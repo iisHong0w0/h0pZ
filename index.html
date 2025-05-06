@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NigaaLOSE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Noto+Sans+SC:wght@300;400;700&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet">
+    <!-- 假設您的 style.css 在這裡 -->
+    <!-- <link rel="stylesheet" href="style.css"> -->
+    <style>
+        :root {
+            --primary-color: #ff3d67; /* 更鮮明的粉紅色/紅色 */
+            --primary-hover-color: #e02950;
+            --background-color: #121212; /* 深色模式背景 */
+            --surface-color: #1e1e1e;   /* 卡片等元素的背景 */
+            --text-color: #e0e0e0;
+            --text-secondary-color: #a0a0a0;
+            --accent-color: #00bcd4; /* 青色，用於突出 */
+            --border-radius: 8px;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', 'Roboto', sans-serif;
+            line-height: 1.7;
+            margin: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 900px; /* 稍微收窄一點，更集中 */
+            margin: 0 auto;
+            padding: 0 15px;
+        }
+
+        /* Hero Section Redesign */
+        #hero {
+            background: linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%); /* 更現代的漸變 */
+            color: #fff;
+            padding: 80px 0 60px; /* 增加上下 padding */
+            text-align: center;
+            position: relative;
+            overflow: hidden; /* For pseudo-elements if added */
+        }
+
+        #hero .title {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900; /* 更粗的 Orbitron */
+            font-size: clamp(2.5em, 6vw, 4.5em); /* 響應式字體大小 */
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+        }
+
+        #hero .tagline {
+            font-size: clamp(1em, 3vw, 1.3em);
+            margin-bottom: 40px;
+            color: rgba(255,255,255,0.9);
+            font-weight: 300;
+        }
+
+        .loadstring-area {
+            background-color: rgba(0, 0, 0, 0.6);
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            max-width: 700px;
+            margin: 0 auto;
+            backdrop-filter: blur(5px); /* 玻璃擬態效果，如果瀏覽器支持 */
+            -webkit-backdrop-filter: blur(5px);
+        }
+
+        .loadstring-area pre {
+            background-color: #111; /* 更深的代碼背景 */
+            color: #f0f0f0;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            overflow-x: auto;
+            text-align: left;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .loadstring-area pre code {
+            font-family: 'Source Code Pro', monospace;
+            font-size: clamp(0.85em, 2vw, 1em);
+            font-weight: 400;
+        }
+
+        .copy-button {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 15px 35px; /* 更大的按鈕 */
+            text-decoration: none;
+            border-radius: var(--border-radius);
+            font-weight: 700;
+            font-size: 1.1em;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease;
+            border: none;
+            cursor: pointer;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 0.5px;
+        }
+
+        .copy-button:hover {
+            background-color: var(--primary-hover-color);
+            transform: translateY(-2px);
+        }
+        .copy-button:active {
+            transform: translateY(0px);
+        }
+
+        .copy-feedback-message {
+            display: block; /* 讓它在按鈕下方 */
+            margin-top: 15px;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        /* Features Section Redesign */
+        #features {
+            padding: 60px 0;
+            background-color: var(--surface-color);
+        }
+
+        #features h2 {
+            text-align: center;
+            font-family: 'Orbitron', sans-serif;
+            font-size: clamp(1.8em, 4vw, 2.5em);
+            margin-bottom: 40px;
+            color: var(--primary-color);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+        }
+
+        .feature-card {
+            background: var(--background-color); /* 卡片使用更深的背景 */
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(var(--primary-color-rgb, 255,61,103), 0.3); /* 使用RGB值以便調整透明度 */
+        }
+
+
+        .feature-icon {
+            font-size: 3em; /* 增大圖標 */
+            margin-bottom: 15px;
+            display: block; /* 確保它佔據自己的行 */
+            color: var(--primary-color);
+        }
+
+        .feature-card h3 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4em;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+
+        .feature-card p {
+            font-size: 0.95em;
+            color: var(--text-secondary-color);
+            line-height: 1.6;
+        }
+
+        /* Warning Section Redesign */
+        #warning {
+            background-color: #2c0b0e; /* 深紅色背景以示警告 */
+            color: #f8d7da; /* 淡紅色文字 */
+            padding: 50px 0;
+            text-align: left; /* 讓列表項目左對齊 */
+        }
+        #warning .container {
+            border: 2px solid #dc3545; /* 紅色邊框 */
+            padding: 30px;
+            border-radius: var(--border-radius);
+            background-color: rgba(0,0,0,0.2);
+        }
+
+        #warning h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: clamp(1.6em, 3.5vw, 2.2em);
+            margin-bottom: 20px;
+            color: #f5c6cb;
+            text-align: center;
+        }
+
+        #warning ul {
+            list-style-type: none; /* 移除默認列表樣式 */
+            padding-left: 0;
+        }
+
+        #warning ul li {
+            padding-left: 30px; /* 給圖標留出空間 */
+            position: relative;
+            margin-bottom: 15px;
+            font-size: 1.05em;
+            line-height: 1.6;
+        }
+        #warning ul li::before {
+            content: '⚠️'; /* 使用emoji作為列表圖標 */
+            position: absolute;
+            left: 0;
+            top: 0px; /* 調整垂直位置 */
+            font-size: 1.2em;
+            color: #ffc107; /* 黃色警告圖標 */
+        }
+        #warning ul li strong {
+            color: #f5c6cb; /* 強調文字顏色 */
+        }
+
+
+        /* Footer Redesign */
+        footer {
+            background: #0a0a0a; /* 非常深的頁腳 */
+            color: var(--text-secondary-color);
+            text-align: center;
+            padding: 30px 0;
+            font-size: 0.9em;
+            margin-top: auto; /* 將頁腳推到底部 */
+        }
+         footer p {
+            margin: 0;
+        }
+
+        /* 輔助類 */
+        .highlight {
+            background-color: rgba(var(--accent-color-rgb, 0,188,212), 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        /* 響應式調整 */
+        @media (max-width: 768px) {
+            #hero .title {
+                font-size: 2.8em;
+            }
+            #hero .tagline {
+                font-size: 1.1em;
+            }
+            .loadstring-area pre code {
+                font-size: 0.9em;
+            }
+            .copy-button {
+                padding: 12px 25px;
+                font-size: 1em;
+            }
+        }
+         @media (max-width: 480px) {
+             #hero .title {
+                font-size: 2.2em;
+            }
+            #hero .tagline {
+                font-size: 1em;
+            }
+            .features-grid {
+                grid-template-columns: 1fr; /* 小屏幕單列 */
+            }
+             .feature-card h3 {
+                 font-size: 1.2em;
+             }
+             .feature-icon {
+                 font-size: 2.5em;
+             }
+             #warning ul li {
+                 font-size: 0.95em;
+             }
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Hero Section -->
+    <section id="hero">
+        <div class="container">
+            <h1 class="title">NigaaLOSE</h1>
+            <p class="tagline">就只是中文的競爭者腳本</p>
+            
+            <div class="loadstring-area">
+                <pre><code id="loadstring-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE"))()</code></pre>
+                <button class="copy-button" onclick="copyLoadstring()">一鍵複製腳本</button>
+                <span id="copy-feedback" class="copy-feedback-message">已複製到剪貼板!</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features">
+        <div class="container">
+            <h2>核心功能模塊</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🎯</span>
+                    <h3>自動瞄準/自動開槍</h3>
+                    <p>按住指定鍵，精準鎖定最近敵人頭部，自動開槍。</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">👁️</span>
+                    <h3>全方位透視 (ESP)</h3>
+                    <p>清晰顯示敵人方框、名稱及血量。通過菜單輕鬆切換。</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">⚡</span>
+                    <h3>當背後靈</h3>
+                    <p>按下 <span class="highlight">H</span> 鍵切換，持續傳送至敵人身後，不知道能幹嘛。</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">✨</span>
+                    <h3>亂飄(反瞄準)</h3>
+                    <p>按下 <span class="highlight">N</span> 鍵切換，在敵人周圍進行不可預測的隨機移動。</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">✈️</span>
+                    <h3由飛行</h3>
+                    <p>掙脫地面束縛。</p>
+                </div>
+                 <div class="feature-card">
+                    <span class="feature-icon">⚙️</span>
+                    <h3>便捷控制面板</h3>
+                    <p>按下 <span class="highlight">Insert</span> 鍵呼出，隨心調整各項功能與快捷鍵。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Warning Section -->
+    <section id="warning">
+        <div class="container">
+            <h2>⚠️ 極重要風險提示 ⚠️</h2>
+            <ul>
+                <li>使用此類腳本嚴重違反 Roblox 服務條款，極有可能導致您的賬戶被**永久封禁**。</li>
+                <li>您必須**自行承擔**所有因使用此腳本而產生的風險與後果。</li>
+                <li>開發者不對任何賬戶封禁或其他潛在損失負責。</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Footer Section -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 NigaaLOSE Team. 保留所有權利。僅供研究和娛樂目的。</p>
+        </div>
+    </footer>
+
+    <script>
+        // JavaScript for Copy Button (no changes needed here from previous version)
+        function copyLoadstring(elementId = 'loadstring-code') {
+            const codeElement = document.getElementById(elementId);
+            const textToCopy = codeElement.innerText;
+
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                console.log('Loadstring copied to clipboard!');
+                // Only Hero section has feedback element with id 'copy-feedback'
+                const feedbackElement = document.getElementById('copy-feedback');
+                if (feedbackElement && elementId === 'loadstring-code') { // Ensure it's the main button
+                    feedbackElement.innerText = '已複製到剪貼板!';
+                    feedbackElement.style.opacity = '1';
+                    setTimeout(() => {
+                        feedbackElement.style.opacity = '0';
+                    }, 2000); // Fade out after 2 seconds
+                } else if (elementId !== 'loadstring-code') { // Should not happen with current HTML
+                    alert('加載代碼已複製!');
+                }
+            }).catch(err => {
+                console.error('Failed to copy loadstring: ', err);
+                 alert('複製失敗，請手動複製。');
+            });
+        }
+
+        // CSS Variable for primary color's RGB components (for RGBA usage)
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
+        if (primaryColor.startsWith('#')) {
+            const hexToRgb = hex => {
+                const bigint = parseInt(hex.slice(1), 16);
+                const r = (bigint >> 16) & 255;
+                const g = (bigint >> 8) & 255;
+                const b = bigint & 255;
+                return `${r},${g},${b}`;
+            };
+            document.documentElement.style.setProperty('--primary-color-rgb', hexToRgb(primaryColor));
+        }
+         const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+        if (accentColor.startsWith('#')) {
+            const hexToRgb = hex => {
+                const bigint = parseInt(hex.slice(1), 16);
+                const r = (bigint >> 16) & 255;
+                const g = (bigint >> 8) & 255;
+                const b = bigint & 255;
+                return `${r},${g},${b}`;
+            };
+            document.documentElement.style.setProperty('--accent-color-rgb', hexToRgb(accentColor));
+        }
+    </script>
+
+</body>
+</html>
