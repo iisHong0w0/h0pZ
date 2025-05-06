@@ -7,7 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Noto+Sans+SC:wght@300;400;700&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet">
-    <!-- <link rel="stylesheet" href="style.css"> -->
+    <!-- AOS.js CSS (for scroll animations) -->
+    <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
     <style>
         :root {
             --primary-color: #ff3d67; /* 更鮮明的粉紅色/紅色 */
@@ -18,6 +19,8 @@
             --text-secondary-color: #a0a0a0;
             --accent-color: #00bcd4; /* 青色，用於突出 */
             --border-radius: 8px;
+            --primary-color-rgb: 255,61,103; /* Added for RGBA use */
+            --accent-color-rgb: 0,188,212;  /* Added for RGBA use */
         }
 
         body {
@@ -29,66 +32,163 @@
             display: flex;
             flex-direction: column;
             min-height: 100vh;
+            /* Custom Scrollbar */
+            scrollbar-color: var(--primary-color) var(--background-color); /* Firefox */
+            scrollbar-width: thin; /* Firefox */
         }
+        /* Custom Scrollbar for Webkit (Chrome, Safari, Edge) */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--background-color);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: var(--border-radius);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-hover-color);
+        }
+
 
         .container {
             width: 90%;
-            max-width: 900px; /* 稍微收窄一點，更集中 */
+            max-width: 900px;
             margin: 0 auto;
             padding: 0 15px;
         }
 
+        /* Preloader Styles */
+        #preloader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--background-color);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.75s ease, visibility 0.75s ease;
+        }
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid var(--surface-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        body.loaded #preloader {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+
         /* Hero Section Redesign */
         #hero {
-            background: linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%); /* 更現代的漸變 */
             color: #fff;
-            padding: 80px 0 60px; /* 增加上下 padding */
+            padding: 100px 0 80px; /* Increased padding */
             text-align: center;
-            position: relative;
-            overflow: hidden; /* For pseudo-elements if added */
+            position: relative; /* For particles and animations */
+            overflow: hidden;
+            /* Animated Gradient Background */
+            background: linear-gradient(135deg, #3a1c71, #d76d77, #ffaf7b, #c33764, #1d2671);
+            background-size: 500% 500%;
+            animation: gradientAnimation 20s ease infinite;
+        }
+        /* tsParticles canvas styling */
+        #tsparticles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; /* Behind content */
+        }
+        #hero .container {
+            position: relative; /* To keep content above particles */
+            z-index: 1;
+        }
+
+
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
 
         #hero .title {
             font-family: 'Orbitron', sans-serif;
-            font-weight: 900; /* 更粗的 Orbitron */
-            font-size: clamp(2.5em, 6vw, 4.5em); /* 響應式字體大小 */
-            margin-bottom: 15px;
-            letter-spacing: 1px;
-            text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+            font-weight: 900;
+            font-size: clamp(2.8em, 7vw, 5em); /* Slightly larger */
+            margin-bottom: 20px;
+            letter-spacing: 1.5px;
+            /* Glow Effect */
+            text-shadow:
+                0 0 7px #fff,
+                0 0 10px #fff,
+                0 0 21px #fff,
+                0 0 42px var(--primary-color),
+                0 0 82px var(--primary-color),
+                0 0 92px var(--primary-color),
+                0 0 102px var(--primary-color),
+                0 0 151px var(--primary-color);
+            opacity: 0;
+            animation: fadeInDown 1s 0.5s ease-out forwards; /* Entry animation */
         }
 
         #hero .tagline {
-            font-size: clamp(1em, 3vw, 1.3em);
-            margin-bottom: 40px;
-            color: rgba(255,255,255,0.9);
+            font-size: clamp(1.1em, 3.5vw, 1.5em); /* Slightly larger */
+            margin-bottom: 50px;
+            color: rgba(255,255,255,0.95);
             font-weight: 300;
+            opacity: 0;
+            animation: fadeInUp 1s 1s ease-out forwards; /* Entry animation */
+        }
+
+        /* Entry Animations Keyframes */
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .loadstring-area {
-            background-color: rgba(0, 0, 0, 0.6);
-            padding: 25px;
+            background-color: rgba(0, 0, 0, 0.7); /* Slightly more opaque */
+            padding: 30px;
             border-radius: var(--border-radius);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
             max-width: 700px;
             margin: 0 auto;
-            backdrop-filter: blur(5px); /* 玻璃擬態效果，如果瀏覽器支持 */
-            -webkit-backdrop-filter: blur(5px);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            opacity: 0;
+            animation: fadeInUp 1s 1.5s ease-out forwards; /* Entry animation */
         }
 
         .loadstring-area pre {
-            background-color: #111; /* 更深的代碼背景 */
-            color: #f0f0f0;
+            background-color: #0d0d0d; /* Even darker code bg */
+            color: #f5f5f5;
             padding: 20px;
             border-radius: var(--border-radius);
             overflow-x: auto;
             text-align: left;
-            margin-bottom: 25px;
-            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.15);
         }
 
         .loadstring-area pre code {
             font-family: 'Source Code Pro', monospace;
-            font-size: clamp(0.85em, 2vw, 1em);
+            font-size: clamp(0.9em, 2.2vw, 1.05em);
             font-weight: 400;
         }
 
@@ -96,28 +196,31 @@
             display: inline-block;
             background-color: var(--primary-color);
             color: white;
-            padding: 15px 35px; /* 更大的按鈕 */
+            padding: 16px 40px;
             text-decoration: none;
             border-radius: var(--border-radius);
             font-weight: 700;
-            font-size: 1.1em;
-            transition: background-color 0.2s ease-in-out, transform 0.1s ease;
+            font-size: 1.15em;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease, box-shadow 0.2s ease;
             border: none;
             cursor: pointer;
             font-family: 'Orbitron', sans-serif;
             letter-spacing: 0.5px;
+            box-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5);
         }
 
         .copy-button:hover {
             background-color: var(--primary-hover-color);
-            transform: translateY(-2px);
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 0 20px rgba(var(--primary-color-rgb), 0.8), 0 0 30px rgba(var(--primary-color-rgb), 0.5);
         }
         .copy-button:active {
-            transform: translateY(0px);
+            transform: translateY(0px) scale(1);
+            box-shadow: 0 0 5px rgba(var(--primary-color-rgb), 0.5);
         }
 
         .copy-feedback-message {
-            display: block; /* 讓它在按鈕下方 */
+            display: block;
             margin-top: 15px;
             opacity: 0;
             transition: opacity 0.5s ease-in-out;
@@ -127,50 +230,80 @@
 
         /* Features Section Redesign */
         #features {
-            padding: 60px 0;
+            padding: 80px 0; /* More padding */
             background-color: var(--surface-color);
         }
 
         #features h2 {
             text-align: center;
             font-family: 'Orbitron', sans-serif;
-            font-size: clamp(1.8em, 4vw, 2.5em);
-            margin-bottom: 40px;
+            font-size: clamp(2em, 5vw, 2.8em);
+            margin-bottom: 60px; /* More space */
             color: var(--primary-color);
+            text-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5);
         }
 
         .features-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
+            gap: 30px; /* More gap */
         }
 
         .feature-card {
-            background: var(--background-color); /* 卡片使用更深的背景 */
-            padding: 25px;
+            background: var(--background-color);
+            padding: 30px; /* More padding */
             border-radius: var(--border-radius);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
             text-align: center;
-            border: 1px solid rgba(255,255,255,0.05);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.08);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative; /* For mouse glow pseudo-element */
+            overflow: hidden; /* To contain mouse glow */
+            will-change: transform, box-shadow;
         }
         .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(var(--primary-color-rgb, 255,61,103), 0.3); /* 使用RGB值以便調整透明度 */
+            transform: translateY(-12px) perspective(1000px) rotateX(3deg) rotateY(2deg) scale(1.03);
+            box-shadow: 0 15px 40px rgba(var(--primary-color-rgb), 0.35);
+        }
+        /* Mouse tracking glow for feature cards */
+        .feature-card::before {
+            content: "";
+            position: absolute;
+            top: var(--mouse-y, -1000px);
+            left: var(--mouse-x, -1000px);
+            width: 250px; /* Size of the glow */
+            height: 250px;
+            background: radial-gradient(circle closest-side, rgba(var(--primary-color-rgb), 0.15), transparent);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: top 0.05s ease-out, left 0.05s ease-out, opacity 0.2s;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 0;
+        }
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+        .feature-card .card-content { /* Wrapper for content to be above glow */
+            position: relative;
+            z-index: 1;
         }
 
-
         .feature-icon {
-            font-size: 3em; /* 增大圖標 */
-            margin-bottom: 15px;
-            display: block; /* 確保它佔據自己的行 */
+            font-size: 3.5em; /* Larger icon */
+            margin-bottom: 20px;
+            display: block;
             color: var(--primary-color);
+            transition: transform 0.3s ease-in-out;
+        }
+        .feature-card:hover .feature-icon {
+            transform: scale(1.15) rotate(8deg);
         }
 
         .feature-card h3 {
             font-family: 'Orbitron', sans-serif;
-            font-size: 1.4em;
-            margin-bottom: 10px;
+            font-size: 1.5em;
+            margin-bottom: 15px;
             color: var(--text-color);
         }
 
@@ -182,59 +315,63 @@
 
         /* Warning Section Redesign */
         #warning {
-            background-color: #2c0b0e; /* 深紅色背景以示警告 */
-            color: #f8d7da; /* 淡紅色文字 */
-            padding: 50px 0;
-            text-align: left; /* 讓列表項目左對齊 */
+            background-color: #2c0b0e;
+            color: #f8d7da;
+            padding: 60px 0;
+            text-align: left;
         }
         #warning .container {
-            border: 2px solid #dc3545; /* 紅色邊框 */
-            padding: 30px;
+            border: 2px solid #e02950; /* Match primary-hover for intensity */
+            padding: 35px;
             border-radius: var(--border-radius);
-            background-color: rgba(0,0,0,0.2);
+            background-color: rgba(0,0,0,0.25);
+            box-shadow: 0 0 20px rgba(224, 41, 80, 0.3);
         }
 
         #warning h2 {
             font-family: 'Orbitron', sans-serif;
-            font-size: clamp(1.6em, 3.5vw, 2.2em);
-            margin-bottom: 20px;
+            font-size: clamp(1.8em, 4vw, 2.4em);
+            margin-bottom: 25px;
             color: #f5c6cb;
             text-align: center;
+            text-shadow: 0 0 10px rgba(245, 198, 203, 0.5);
         }
 
         #warning ul {
-            list-style-type: none; /* 移除默認列表樣式 */
+            list-style-type: none;
             padding-left: 0;
         }
 
         #warning ul li {
-            padding-left: 30px; /* 給圖標留出空間 */
+            padding-left: 35px;
             position: relative;
-            margin-bottom: 15px;
-            font-size: 1.05em;
-            line-height: 1.6;
+            margin-bottom: 18px;
+            font-size: 1.1em;
+            line-height: 1.7;
         }
         #warning ul li::before {
-            content: '⚠️'; /* 使用emoji作為列表圖標 */
+            content: '⚠️';
             position: absolute;
             left: 0;
-            top: 0px; /* 調整垂直位置 */
-            font-size: 1.2em;
-            color: #ffc107; /* 黃色警告圖標 */
+            top: 2px;
+            font-size: 1.3em;
+            color: #ffc107;
         }
         #warning ul li strong {
-            color: #f5c6cb; /* 強調文字顏色 */
+            color: #f8d7da; /* Brighter for strong tag */
+            font-weight: 700;
         }
 
 
         /* Footer Redesign */
         footer {
-            background: #0a0a0a; /* 非常深的頁腳 */
+            background: #0a0a0a;
             color: var(--text-secondary-color);
             text-align: center;
-            padding: 30px 0;
+            padding: 35px 0;
             font-size: 0.9em;
-            margin-top: auto; /* 將頁腳推到底部 */
+            margin-top: auto;
+            border-top: 1px solid #1a1a1a;
         }
          footer p {
             margin: 0;
@@ -242,47 +379,52 @@
 
         /* 輔助類 */
         .highlight {
-            background-color: rgba(var(--accent-color-rgb, 0,188,212), 0.2);
-            padding: 2px 6px;
+            background-color: rgba(var(--accent-color-rgb), 0.25); /* Slightly stronger highlight */
+            padding: 3px 8px;
             border-radius: 4px;
             font-weight: bold;
             color: var(--accent-color);
+            box-shadow: 0 0 8px rgba(var(--accent-color-rgb), 0.3);
         }
 
         /* 響應式調整 */
         @media (max-width: 768px) {
             #hero .title {
-                font-size: 2.8em;
+                font-size: clamp(2.8em, 10vw, 3.5em); /* Adjusted clamp for mobile */
             }
             #hero .tagline {
-                font-size: 1.1em;
+                font-size: clamp(1.1em, 5vw, 1.3em);
             }
             .loadstring-area pre code {
                 font-size: 0.9em;
             }
             .copy-button {
-                padding: 12px 25px;
-                font-size: 1em;
+                padding: 14px 30px;
+                font-size: 1.05em;
             }
         }
          @media (max-width: 480px) {
              #hero .title {
-                font-size: 2.2em;
+                font-size: clamp(2.2em, 12vw, 2.8em); /* Adjusted clamp for small mobile */
             }
             #hero .tagline {
                 font-size: 1em;
             }
             .features-grid {
-                grid-template-columns: 1fr; /* 小屏幕單列 */
+                grid-template-columns: 1fr;
             }
              .feature-card h3 {
-                 font-size: 1.2em;
+                 font-size: 1.3em;
              }
              .feature-icon {
-                 font-size: 2.5em;
+                 font-size: 3em;
              }
              #warning ul li {
-                 font-size: 0.95em;
+                 font-size: 1em;
+                 padding-left: 30px;
+             }
+             #warning ul li::before {
+                font-size: 1.1em;
              }
         }
 
@@ -290,8 +432,14 @@
 </head>
 <body>
 
+    <!-- Preloader -->
+    <div id="preloader">
+        <div class="spinner"></div>
+    </div>
+
     <!-- Hero Section -->
     <section id="hero">
+        <div id="tsparticles"></div> <!-- tsParticles container -->
         <div class="container">
             <h1 class="title">NigaaLOSE</h1>
             <p class="tagline">就只是中文的競爭者腳本</p>
@@ -307,37 +455,49 @@
     <!-- Features Section -->
     <section id="features">
         <div class="container">
-            <h2>核心功能模塊</h2>
+            <h2 data-aos="fade-up">核心功能模塊</h2>
             <div class="features-grid">
-                <div class="feature-card">
-                    <span class="feature-icon">🎯</span>
-                    <h3>自動瞄準/自動開槍</h3>
-                    <p>按住指定鍵，精準鎖定最近敵人頭部，自動開槍。</p>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+                    <div class="card-content">
+                        <span class="feature-icon">🎯</span>
+                        <h3>自動瞄準/自動開槍</h3>
+                        <p>按住指定鍵，精準鎖定最近敵人頭部，自動開槍。</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <span class="feature-icon">👁️</span>
-                    <h3>全方位透視 (ESP)</h3>
-                    <p>清晰顯示敵人方框、名稱及血量。通過菜單輕鬆切換。</p>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+                    <div class="card-content">
+                        <span class="feature-icon">👁️</span>
+                        <h3>全方位透視 (ESP)</h3>
+                        <p>清晰顯示敵人方框、名稱及血量。通過菜單輕鬆切換。</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <span class="feature-icon">⚡</span>
-                    <h3>當背後靈</h3>
-                    <p>按下 <span class="highlight">H</span> 鍵切換，持續傳送至敵人身後，不知道能幹嘛。</p>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+                     <div class="card-content">
+                        <span class="feature-icon">⚡</span>
+                        <h3>當背後靈</h3>
+                        <p>按下 <span class="highlight">H</span> 鍵切換，持續傳送至敵人身後，不知道能幹嘛。</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <span class="feature-icon">✨</span>
-                    <h3>亂飄(反瞄準)</h3>
-                    <p>按下 <span class="highlight">N</span> 鍵切換，在敵人周圍進行不可預測的隨機移動。</p>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="100"> <!-- Stagger delay for next row -->
+                     <div class="card-content">
+                        <span class="feature-icon">✨</span>
+                        <h3>亂飄(反瞄準)</h3>
+                        <p>按下 <span class="highlight">N</span> 鍵切換，在敵人周圍進行不可預測的隨機移動。</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <span class="feature-icon">✈️</span>
-                    <h3由飛行</h3>
-                    <p>掙脫地面束縛。</p>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+                     <div class="card-content">
+                        <span class="feature-icon">✈️</span>
+                        <h3>自由飛行</h3> <!-- Corrected typo: 由 -> 自由 -->
+                        <p>掙脫地面束縛。</p>
+                    </div>
                 </div>
-                 <div class="feature-card">
-                    <span class="feature-icon">⚙️</span>
-                    <h3>便捷控制面板</h3>
-                    <p>按下 <span class="highlight">Insert</span> 鍵呼出，隨心調整各項功能與快捷鍵。</p>
+                 <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+                     <div class="card-content">
+                        <span class="feature-icon">⚙️</span>
+                        <h3>便捷控制面板</h3>
+                        <p>按下 <span class="highlight">Insert</span> 鍵呼出，隨心調整各項功能與快捷鍵。</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -345,7 +505,7 @@
 
     <!-- Warning Section -->
     <section id="warning">
-        <div class="container">
+        <div class="container" data-aos="zoom-in">
             <h2>⚠️ 極重要風險提示 ⚠️</h2>
             <ul>
                 <li>使用此類腳本嚴重違反 Roblox 服務條款，極有可能導致您的賬戶被**永久封禁**。</li>
@@ -358,27 +518,84 @@
     <!-- Footer Section -->
     <footer>
         <div class="container">
-            <p>&copy; 2025 NigaaLOSE Team. 保留所有權利。僅供研究和娛樂目的。</p>
+            <p>© 2025 NigaaLOSE Team. 保留所有權利。僅供研究和娛樂目的。</p>
         </div>
     </footer>
 
+    <!-- tsParticles JS -->
+    <script src="https://cdn.jsdelivr.net/npm/tsparticles@latest/tsparticles.min.js"></script>
+    <!-- AOS.js JS -->
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+
     <script>
-        // JavaScript for Copy Button (no changes needed here from previous version)
+        // Preloader
+        window.addEventListener('load', () => {
+            document.body.classList.add('loaded');
+            const preloader = document.getElementById('preloader');
+            if(preloader) {
+                 // Ensure it's removed after transition to prevent interference
+                setTimeout(() => {
+                    preloader.style.display = 'none';
+                }, 750); // Match transition duration
+            }
+        });
+
+        // Initialize AOS (Animate On Scroll)
+        AOS.init({
+            duration: 800, // Animation duration
+            once: true,    // Animation happens only once
+            offset: 50,   // Offset (in px) from the original trigger point
+            easing: 'ease-in-out-quad', // Smoother easing
+        });
+
+        // tsParticles Initialization for Hero Section
+        if (window.tsParticles) {
+            tsParticles.load("tsparticles", { // Target the div with id "tsparticles"
+                fpsLimit: 60,
+                particles: {
+                    number: { value: 50, density: { enable: true, value_area: 800 } },
+                    color: { value: "#ffffff" },
+                    shape: { type: "circle" },
+                    opacity: { value: 0.3, random: true, anim: { enable: true, speed: 0.5, opacity_min: 0.1, sync: false } },
+                    size: { value: 2, random: true, anim: { enable: false } },
+                    line_linked: { enable: true, distance: 120, color: "#ffffff", opacity: 0.2, width: 1 },
+                    move: {
+                        enable: true, speed: 1.5, direction: "none", random: true, straight: false, out_mode: "out",
+                        attract: { enable: false }
+                    }
+                },
+                interactivity: {
+                    detect_on: "canvas",
+                    events: {
+                        onhover: { enable: true, mode: "grab" }, // Changed to grab for a subtle effect
+                        onclick: { enable: true, mode: "push" },
+                        resize: true
+                    },
+                    modes: {
+                        grab: { distance: 140, line_opacity: 0.4 },
+                        push: { particles_nb: 3 }
+                    }
+                },
+                detectRetina: true,
+            });
+        }
+
+
+        // JavaScript for Copy Button
         function copyLoadstring(elementId = 'loadstring-code') {
             const codeElement = document.getElementById(elementId);
             const textToCopy = codeElement.innerText;
 
             navigator.clipboard.writeText(textToCopy).then(() => {
                 console.log('Loadstring copied to clipboard!');
-                // Only Hero section has feedback element with id 'copy-feedback'
                 const feedbackElement = document.getElementById('copy-feedback');
-                if (feedbackElement && elementId === 'loadstring-code') { // Ensure it's the main button
+                if (feedbackElement && elementId === 'loadstring-code') {
                     feedbackElement.innerText = '已複製到剪貼板!';
                     feedbackElement.style.opacity = '1';
                     setTimeout(() => {
                         feedbackElement.style.opacity = '0';
-                    }, 2000); // Fade out after 2 seconds
-                } else if (elementId !== 'loadstring-code') { // Should not happen with current HTML
+                    }, 2000);
+                } else if (elementId !== 'loadstring-code') {
                     alert('加載代碼已複製!');
                 }
             }).catch(err => {
@@ -387,29 +604,39 @@
             });
         }
 
-        // CSS Variable for primary color's RGB components (for RGBA usage)
-        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
-        if (primaryColor.startsWith('#')) {
-            const hexToRgb = hex => {
-                const bigint = parseInt(hex.slice(1), 16);
-                const r = (bigint >> 16) & 255;
-                const g = (bigint >> 8) & 255;
-                const b = bigint & 255;
-                return `${r},${g},${b}`;
-            };
-            document.documentElement.style.setProperty('--primary-color-rgb', hexToRgb(primaryColor));
+        // CSS Variable for RGB components (for RGBA usage)
+        function setRgbColorVar(varName, cssVarName) {
+            const color = getComputedStyle(document.documentElement).getPropertyValue(cssVarName).trim();
+            if (color.startsWith('#')) {
+                const hexToRgb = hex => {
+                    const bigint = parseInt(hex.slice(1), 16);
+                    const r = (bigint >> 16) & 255;
+                    const g = (bigint >> 8) & 255;
+                    const b = bigint & 255;
+                    return `${r},${g},${b}`;
+                };
+                document.documentElement.style.setProperty(varName, hexToRgb(color));
+            }
         }
-         const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
-        if (accentColor.startsWith('#')) {
-            const hexToRgb = hex => {
-                const bigint = parseInt(hex.slice(1), 16);
-                const r = (bigint >> 16) & 255;
-                const g = (bigint >> 8) & 255;
-                const b = bigint & 255;
-                return `${r},${g},${b}`;
-            };
-            document.documentElement.style.setProperty('--accent-color-rgb', hexToRgb(accentColor));
-        }
+        setRgbColorVar('--primary-color-rgb', '--primary-color');
+        setRgbColorVar('--accent-color-rgb', '--accent-color');
+
+
+        // Mouse tracking glow for feature cards
+        document.querySelectorAll('.feature-card').forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.setProperty('--mouse-x', '-1000px'); // Move glow off-screen
+                card.style.setProperty('--mouse-y', '-1000px');
+            });
+        });
+
     </script>
 
 </body>
