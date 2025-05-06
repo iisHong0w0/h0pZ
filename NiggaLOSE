@@ -30,7 +30,7 @@ local TELEPORT_BEHIND_DISTANCE = 3
 local ANTI_AIM_RADIUS = 5
 local FLIGHT_SPEED = 50
 local FLIGHT_VERTICAL_SPEED = 30
-local TRIGGERBOT_CLICK_INTERVAL = 0.06       -- Adjusted interval
+local TRIGGERBOT_CLICK_INTERVAL = 0       -- Adjusted interval
 
 -- Visual Cue Dot / ESP Config
 local DOT_COLOR_NOLOCK=Color3.fromRGB(255,255,255); local DOT_COLOR_LOCKED=Color3.fromRGB(255,0,0); local DOT_SIZE=Vector2.new(4,4)
