@@ -51,6 +51,9 @@
             background: var(--primary-hover-color);
         }
 
+        html { /* Smooth scroll for anchor links */
+            scroll-behavior: smooth;
+        }
 
         .container {
             width: 90%;
@@ -141,6 +144,7 @@
                 0 0 151px var(--primary-color);
             opacity: 0;
             animation: fadeInDown 1s 0.5s ease-out forwards; /* Entry animation */
+            transition: transform 0.5s cubic-bezier(0.075, 0.82, 0.165, 1); /* For JS tilt */
         }
 
         #hero .tagline {
@@ -148,22 +152,44 @@
             margin-bottom: 50px;
             color: rgba(255,255,255,0.95);
             font-weight: 300;
-            opacity: 0;
-            animation: fadeInUp 1s 1s ease-out forwards; /* Entry animation */
+            opacity: 0; /* Initial state for JS typewriter or CSS fade */
         }
+
+        /* Typewriter effect for tagline */
+        .typewriter-text {
+            display: inline-block; /* Important for width animation */
+            overflow: hidden;
+            border-right: .1em solid var(--primary-color); /* Blinking cursor */
+            white-space: nowrap;
+            letter-spacing: .05em;
+            opacity: 1 !important; /* Override initial opacity if needed */
+            width: 0; /* Start with no width */
+            animation:
+                typing 3.0s steps(30, end) 1.2s forwards, /* Adjust steps and duration */
+                blink-caret .75s step-end infinite 1.2s;
+        }
+        @keyframes typing {
+            from { width: 0 }
+            to { width: 100% }
+        }
+        @keyframes blink-caret {
+            from, to { border-color: transparent }
+            50% { border-color: var(--primary-color); }
+        }
+
 
         /* Entry Animations Keyframes */
         @keyframes fadeInDown {
             from { opacity: 0; transform: translateY(-40px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes fadeInUp {
+        @keyframes fadeInUp { /* Used for loadstring area and other sections */
             from { opacity: 0; transform: translateY(40px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
         .loadstring-area {
-            background-color: rgba(0, 0, 0, 0.7); /* Slightly more opaque */
+            background-color: rgba(0, 0, 0, 0.7);
             padding: 30px;
             border-radius: var(--border-radius);
             box-shadow: 0 10px 30px rgba(0,0,0,0.4);
@@ -172,11 +198,11 @@
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             opacity: 0;
-            animation: fadeInUp 1s 1.5s ease-out forwards; /* Entry animation */
+            animation: fadeInUp 1s 1.8s ease-out forwards; 
         }
 
         .loadstring-area pre {
-            background-color: #0d0d0d; /* Even darker code bg */
+            background-color: #0d0d0d;
             color: #f5f5f5;
             padding: 20px;
             border-radius: var(--border-radius);
@@ -207,12 +233,17 @@
             font-family: 'Orbitron', sans-serif;
             letter-spacing: 0.5px;
             box-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5);
+            animation: pulseButton 2s 2.5s infinite cubic-bezier(0.66, 0, 0, 1);
         }
-
+        @keyframes pulseButton {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5); }
+            50% { transform: scale(1.08); box-shadow: 0 0 25px rgba(var(--primary-color-rgb), 0.9), 0 0 40px rgba(var(--primary-color-rgb), 0.6); }
+        }
         .copy-button:hover {
             background-color: var(--primary-hover-color);
             transform: translateY(-3px) scale(1.05);
             box-shadow: 0 0 20px rgba(var(--primary-color-rgb), 0.8), 0 0 30px rgba(var(--primary-color-rgb), 0.5);
+            animation-play-state: paused;
         }
         .copy-button:active {
             transform: translateY(0px) scale(1);
@@ -228,9 +259,78 @@
             font-weight: bold;
         }
 
+        /* --- Changelog Section --- */
+        #changelog {
+            padding: 80px 0;
+            background-color: #2a2a3a; /* 深藍紫色背景 */
+            color: #f0f0f0;
+            position: relative;
+            overflow: hidden;
+        }
+        #changelog::before { /* Scanline effect */
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, rgba(200,200,255,0.02), rgba(200,200,255,0.02) 1px, transparent 1px, transparent 4px);
+            animation: scanline 10s linear infinite;
+            pointer-events: none; opacity: 0.5; z-index: 0;
+        }
+        @keyframes scanline { 0% { background-position: 0 0; } 100% { background-position: 0 200px; } }
+
+        #changelog .container { position: relative; z-index: 1; }
+
+        .changelog-title {
+            text-align: center; font-family: 'Source Code Pro', monospace;
+            font-size: clamp(2em, 5vw, 2.8em); margin-bottom: 60px;
+            color: #82ffa2; /* 復古綠色 */
+            text-transform: uppercase; letter-spacing: 2px;
+            text-shadow: 0 0 8px rgba(130, 255, 162, 0.7);
+        }
+        .timeline { position: relative; max-width: 750px; margin: 0 auto; }
+        .timeline::after { /* Central line */
+            content: ''; position: absolute; width: 4px; background-color: #4f4f6a;
+            top: 0; bottom: 0; left: 50%; margin-left: -2px; z-index: 0; border-radius: 2px;
+        }
+        .timeline-item {
+            padding: 10px 40px; position: relative; background-color: transparent;
+            width: 50%; box-sizing: border-box; margin-bottom: 40px;
+        }
+        .timeline-item:nth-child(odd) { left: 0; padding-right: 65px; }
+        .timeline-item:nth-child(even) { left: 50%; padding-left: 65px; }
+        .timeline-item:nth-child(odd) .timeline-icon { right: -25px; left: auto; }
+        .timeline-item:nth-child(even) .timeline-icon { left: -25px; }
+        .timeline-icon {
+            position: absolute; width: 50px; height: 50px; line-height: 50px;
+            font-size: 1.8em; background-color: #82ffa2; color: #1e1e2f;
+            border-radius: 50%; text-align: center; top: 15px; z-index: 10;
+            box-shadow: 0 0 15px rgba(130, 255, 162, 0.5); border: 2px solid #1e1e2f;
+        }
+        .timeline-content {
+            padding: 25px; background-color: rgba(30, 30, 47, 0.85);
+            border: 1px solid #4f4f6a; border-radius: var(--border-radius);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); position: relative;
+            font-family: 'Source Code Pro', monospace;
+        }
+        .timeline-content h3 { margin-top: 0; color: #c8e6c9; font-size: 1.4em; margin-bottom: 8px; }
+        .timeline-date { font-size: 0.85em; color: #a7a7cc; display: block; margin-bottom: 15px; }
+        .timeline-content ul { list-style-type: none; padding-left: 0; margin-bottom: 0; }
+        .timeline-content ul li {
+            margin-bottom: 8px; line-height: 1.6; color: #d0d0e0;
+            padding-left: 20px; position: relative;
+        }
+        .timeline-content ul li::before {
+            content: '»'; position: absolute; left: 0; color: #82ffa2; font-weight: bold;
+        }
+        @media screen and (max-width: 768px) {
+            .timeline::after { left: 31px; }
+            .timeline-item { width: 100%; padding-left: 80px; padding-right: 15px; left: 0 !important; }
+            .timeline-icon { left: 15px !important; right: auto !important; }
+        }
+
+
         /* Features Section Redesign */
         #features {
-            padding: 80px 0; /* More padding */
+            padding: 80px 0;
             background-color: var(--surface-color);
         }
 
@@ -238,7 +338,7 @@
             text-align: center;
             font-family: 'Orbitron', sans-serif;
             font-size: clamp(2em, 5vw, 2.8em);
-            margin-bottom: 60px; /* More space */
+            margin-bottom: 60px;
             color: var(--primary-color);
             text-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5);
         }
@@ -246,32 +346,31 @@
         .features-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px; /* More gap */
+            gap: 30px;
         }
 
         .feature-card {
             background: var(--background-color);
-            padding: 30px; /* More padding */
+            padding: 30px;
             border-radius: var(--border-radius);
             box-shadow: 0 8px 20px rgba(0,0,0,0.25);
             text-align: center;
             border: 1px solid rgba(255,255,255,0.08);
             transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            position: relative; /* For mouse glow pseudo-element */
-            overflow: hidden; /* To contain mouse glow */
+            position: relative;
+            overflow: hidden;
             will-change: transform, box-shadow;
         }
         .feature-card:hover {
             transform: translateY(-12px) perspective(1000px) rotateX(3deg) rotateY(2deg) scale(1.03);
             box-shadow: 0 15px 40px rgba(var(--primary-color-rgb), 0.35);
         }
-        /* Mouse tracking glow for feature cards */
         .feature-card::before {
             content: "";
             position: absolute;
             top: var(--mouse-y, -1000px);
             left: var(--mouse-x, -1000px);
-            width: 250px; /* Size of the glow */
+            width: 250px;
             height: 250px;
             background: radial-gradient(circle closest-side, rgba(var(--primary-color-rgb), 0.15), transparent);
             border-radius: 50%;
@@ -284,13 +383,13 @@
         .feature-card:hover::before {
             opacity: 1;
         }
-        .feature-card .card-content { /* Wrapper for content to be above glow */
+        .feature-card .card-content {
             position: relative;
             z-index: 1;
         }
 
         .feature-icon {
-            font-size: 3.5em; /* Larger icon */
+            font-size: 3.5em;
             margin-bottom: 20px;
             display: block;
             color: var(--primary-color);
@@ -321,7 +420,7 @@
             text-align: left;
         }
         #warning .container {
-            border: 2px solid #e02950; /* Match primary-hover for intensity */
+            border: 2px solid #e02950;
             padding: 35px;
             border-radius: var(--border-radius);
             background-color: rgba(0,0,0,0.25);
@@ -358,10 +457,9 @@
             color: #ffc107;
         }
         #warning ul li strong {
-            color: #f8d7da; /* Brighter for strong tag */
+            color: #f8d7da;
             font-weight: 700;
         }
-
 
         /* Footer Redesign */
         footer {
@@ -376,10 +474,18 @@
          footer p {
             margin: 0;
         }
+        footer a {
+            color: var(--accent-color);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+        footer a:hover {
+            color: var(--primary-hover-color);
+        }
 
         /* 輔助類 */
         .highlight {
-            background-color: rgba(var(--accent-color-rgb), 0.25); /* Slightly stronger highlight */
+            background-color: rgba(var(--accent-color-rgb), 0.25);
             padding: 3px 8px;
             border-radius: 4px;
             font-weight: bold;
@@ -389,43 +495,19 @@
 
         /* 響應式調整 */
         @media (max-width: 768px) {
-            #hero .title {
-                font-size: clamp(2.8em, 10vw, 3.5em); /* Adjusted clamp for mobile */
-            }
-            #hero .tagline {
-                font-size: clamp(1.1em, 5vw, 1.3em);
-            }
-            .loadstring-area pre code {
-                font-size: 0.9em;
-            }
-            .copy-button {
-                padding: 14px 30px;
-                font-size: 1.05em;
-            }
+            #hero .title { font-size: clamp(2.8em, 10vw, 3.5em); }
+            #hero .tagline { font-size: clamp(1.1em, 5vw, 1.3em); }
+            .loadstring-area pre code { font-size: 0.9em; }
+            .copy-button { padding: 14px 30px; font-size: 1.05em; }
         }
          @media (max-width: 480px) {
-             #hero .title {
-                font-size: clamp(2.2em, 12vw, 2.8em); /* Adjusted clamp for small mobile */
-            }
-            #hero .tagline {
-                font-size: 1em;
-            }
-            .features-grid {
-                grid-template-columns: 1fr;
-            }
-             .feature-card h3 {
-                 font-size: 1.3em;
-             }
-             .feature-icon {
-                 font-size: 3em;
-             }
-             #warning ul li {
-                 font-size: 1em;
-                 padding-left: 30px;
-             }
-             #warning ul li::before {
-                font-size: 1.1em;
-             }
+            #hero .title { font-size: clamp(2.2em, 12vw, 2.8em); }
+            #hero .tagline { font-size: 1em; }
+            .features-grid { grid-template-columns: 1fr; }
+            .feature-card h3 { font-size: 1.3em; }
+            .feature-icon { font-size: 3em; }
+            #warning ul li { font-size: 1em; padding-left: 30px; }
+            #warning ul li::before { font-size: 1.1em; }
         }
 
     </style>
@@ -442,12 +524,62 @@
         <div id="tsparticles"></div> <!-- tsParticles container -->
         <div class="container">
             <h1 class="title">NigaaLOSE</h1>
-            <p class="tagline">就只是中文的競爭者腳本</p>
+            <p class="tagline" id="hero-tagline">就只是中文的競爭者腳本</p>
             
             <div class="loadstring-area">
                 <pre><code id="loadstring-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE"))()</code></pre>
                 <button class="copy-button" onclick="copyLoadstring()">一鍵複製腳本</button>
                 <span id="copy-feedback" class="copy-feedback-message">已複製到剪貼板!</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Changelog Section (Moved Here) -->
+    <section id="changelog">
+        <div class="container">
+            <h2 class="changelog-title" data-aos="fade-up">更新日誌 📜</h2>
+            <div class="timeline" data-aos="fade-up" data-aos-delay="200">
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="300">
+                    <div class="timeline-icon">✨</div>
+                    <div class="timeline-content">
+                        <h3>版本 v5.3.S</h3>
+                        <span class="timeline-date">2025年5月9日</span>
+                        <ul>
+                            <li>針對 Solara 注入器進行了優化，解決了注入失敗的問題。</li>
+                            <li>簡化了部分核心邏輯函數，以提高與特定注入器的兼容性。</li>
+                            <li>保留了 DrawingLib 檢查，確保 ESP 功能的穩定性。</li>
+                            <li>調整了 FakeLag 歷史記錄上限。</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="timeline-item" data-aos="fade-right" data-aos-delay="100">
+                    <div class="timeline-icon">🚀</div>
+                    <div class="timeline-content">
+                        <h3>版本 v4.5</h3>
+                        <span class="timeline-date">2025年5月6日</span>
+                        <ul>
+                            <li>全新 redesigned 控制面板 UI。</li>
+                            <li>新增飛行速度滑塊調整。</li>
+                            <li>新增「延遲假身 (Fake Lag)」功能。</li>
+                            <li>飛行模式現在自動包含穿牆 (Noclip) 功能。</li>
+                            <li>改進第三人稱視角邏輯。</li>
+                            <li>優化了按鍵綁定衝突檢測。</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="100">
+                    <div class="timeline-icon">🐛</div>
+                    <div class="timeline-content">
+                        <h3>版本 v4</h3>
+                        <span class="timeline-date">2025年5月5日</span>
+                        <ul>
+                            <li>修復了 ESP 在某些情況下不顯示的問題 (引入 DrawingLib 檢查)。</li>
+                            <li>修正了 `getNearestPlayer` 函數中 `goto` 語句可能導致的邏輯問題 (後續版本中進一步優化)。</li>
+                            <li>調整了 Noclip 功能的實現。</li>
+                        </ul>
+                    </div>
+                </div>
+                 <!-- 在此添加更多更新日誌條目 -->
             </div>
         </div>
     </section>
@@ -478,7 +610,7 @@
                         <p>按下 <span class="highlight">H</span> 鍵切換，持續傳送至敵人身後，不知道能幹嘛。</p>
                     </div>
                 </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="100"> <!-- Stagger delay for next row -->
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
                      <div class="card-content">
                         <span class="feature-icon">✨</span>
                         <h3>亂飄(反瞄準)</h3>
@@ -488,7 +620,7 @@
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
                      <div class="card-content">
                         <span class="feature-icon">✈️</span>
-                        <h3>自由飛行</h3> <!-- Corrected typo: 由 -> 自由 -->
+                        <h3>自由飛行</h3>
                         <p>掙脫地面束縛。</p>
                     </div>
                 </div>
@@ -518,7 +650,7 @@
     <!-- Footer Section -->
     <footer>
         <div class="container">
-            <p>© 2025 NigaaLOSE. 保留所有權利。僅供研究和娛樂目的。</p>
+            <p>© 2025 NigaaLOSE. 保留所有權利。僅供<a href="https://github.com/iisHong0w0/niggalose" target="_blank" rel="noopener noreferrer">研究</a>和娛樂目的。</p>
         </div>
     </footer>
 
@@ -533,24 +665,23 @@
             document.body.classList.add('loaded');
             const preloader = document.getElementById('preloader');
             if(preloader) {
-                 // Ensure it's removed after transition to prevent interference
                 setTimeout(() => {
                     preloader.style.display = 'none';
-                }, 750); // Match transition duration
+                }, 750);
             }
         });
 
         // Initialize AOS (Animate On Scroll)
         AOS.init({
-            duration: 800, // Animation duration
-            once: true,    // Animation happens only once
-            offset: 50,   // Offset (in px) from the original trigger point
-            easing: 'ease-in-out-quad', // Smoother easing
+            duration: 800,
+            once: true,
+            offset: 50,
+            easing: 'ease-in-out-quad',
         });
 
         // tsParticles Initialization for Hero Section
         if (window.tsParticles) {
-            tsParticles.load("tsparticles", { // Target the div with id "tsparticles"
+            tsParticles.load("tsparticles", {
                 fpsLimit: 60,
                 particles: {
                     number: { value: 50, density: { enable: true, value_area: 800 } },
@@ -567,7 +698,7 @@
                 interactivity: {
                     detect_on: "canvas",
                     events: {
-                        onhover: { enable: true, mode: "grab" }, // Changed to grab for a subtle effect
+                        onhover: { enable: true, mode: "grab" },
                         onclick: { enable: true, mode: "push" },
                         resize: true
                     },
@@ -579,7 +710,6 @@
                 detectRetina: true,
             });
         }
-
 
         // JavaScript for Copy Button
         function copyLoadstring(elementId = 'loadstring-code') {
@@ -632,11 +762,62 @@
                 card.style.setProperty('--mouse-y', `${y}px`);
             });
             card.addEventListener('mouseleave', () => {
-                card.style.setProperty('--mouse-x', '-1000px'); // Move glow off-screen
+                card.style.setProperty('--mouse-x', '-1000px');
                 card.style.setProperty('--mouse-y', '-1000px');
             });
         });
 
+        // Typewriter effect for tagline
+        const taglineElement = document.getElementById('hero-tagline');
+        if (taglineElement && !taglineElement.classList.contains('typewriter-applied')) {
+            const originalText = taglineElement.innerText;
+            const textLength = originalText.length;
+            taglineElement.innerText = ''; 
+            taglineElement.classList.add('typewriter-text');
+            const typingDuration = Math.max(2.5, textLength * 0.1); 
+            const animationDelay = '1.2s'; 
+            taglineElement.style.animation = `
+                typing ${typingDuration}s steps(${textLength}, end) ${animationDelay} forwards,
+                blink-caret .75s step-end infinite ${animationDelay}
+            `;
+             setTimeout(() => {
+                taglineElement.innerText = originalText;
+             }, 10);
+            taglineElement.classList.add('typewriter-applied');
+        }
+
+
+        // Interactive Tilt Effect for Hero Title
+        const heroTitle = document.querySelector('#hero .title');
+        const heroSection = document.getElementById('hero');
+
+        if (heroTitle && heroSection) {
+            heroSection.addEventListener('mousemove', (e) => {
+                if (window.innerWidth < 768) return; 
+
+                const rect = heroSection.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+
+                const deltaX = (x - centerX) / centerX;
+                const deltaY = (y - centerY) / centerY;
+
+                const rotateY = deltaX * 3; 
+                const rotateX = -deltaY * 3; 
+
+                heroTitle.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
+            });
+
+            heroSection.addEventListener('mouseleave', () => {
+                if (window.innerWidth < 768) return;
+                heroTitle.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
+            });
+        }
+
+        console.log("NigaaLOSE page scripts loaded and initialized with new effects.");
     </script>
 
 </body>
