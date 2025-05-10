@@ -198,7 +198,7 @@
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             opacity: 0;
-            animation: fadeInUp 1s 1.8s ease-out forwards; 
+            animation: fadeInUp 1s 1.8s ease-out forwards;
         }
 
         .loadstring-area pre {
@@ -525,7 +525,7 @@
         <div class="container">
             <h1 class="title">NigaaLOSE</h1>
             <p class="tagline" id="hero-tagline">就只是中文的競爭者腳本</p>
-            
+
             <div class="loadstring-area">
                 <pre><code id="loadstring-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE"))()</code></pre>
                 <button class="copy-button" onclick="copyLoadstring()">一鍵複製腳本</button>
@@ -539,7 +539,42 @@
         <div class="container">
             <h2 class="changelog-title" data-aos="fade-up">更新日誌 📜</h2>
             <div class="timeline" data-aos="fade-up" data-aos-delay="200">
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="300">
+                <!-- NEWEST Changelog Entry v6.0S -->
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="100">
+                    <div class="timeline-icon">🎉</div>
+                    <div class="timeline-content">
+                        <h3>版本 v6.0S</h3>
+                        <span class="timeline-date">2025年5月15日 (假設日期)</span>
+                        <ul>
+                            <li><strong>全新使用者介面 (GUI v6):</strong>
+                                <ul>
+                                    <li>新設計，分頁系統 (瞄準, 透視, 移動, 雜項, 設定)。</li>
+                                    <li>新視覺主題，標題欄美化 (Logo, 網站文字)。</li>
+                                </ul>
+                            </li>
+                            <li><strong>新增「啟用中功能列表」GUI:</strong>
+                                <ul>
+                                    <li>獨立可拖曳面板顯示已啟用功能 (預設熱鍵 <span class="highlight">Delete</span>)。</li>
+                                </ul>
+                            </li>
+                            <li><strong>新增「連跳 (Bhop)」模式:</strong>
+                                <ul>
+                                    <li>獨立模組 (預設熱鍵 <span class="highlight">LeftAlt</span>)，GUI可調空中加速力度。</li>
+                                </ul>
+                            </li>
+                            <li><strong>功能設定增強:</strong>
+                                <ul>
+                                    <li>飛行速度、第三人稱視角距離可透過GUI滑桿調整。</li>
+                                </ul>
+                            </li>
+                            <li>飛行/Bhop模式自動管理 <span class="highlight">Humanoid.AutoRotate</span>。</li>
+                            <li>優化移動功能排斥邏輯、輸入處理、滑鼠行為管理。</li>
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of v6.0S Entry -->
+
+                <div class="timeline-item" data-aos="fade-right" data-aos-delay="200"> <!-- Adjusted delay -->
                     <div class="timeline-icon">✨</div>
                     <div class="timeline-content">
                         <h3>版本 v5.3.S</h3>
@@ -552,7 +587,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="timeline-item" data-aos="fade-right" data-aos-delay="100">
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="300"> <!-- Adjusted delay -->
                     <div class="timeline-icon">🚀</div>
                     <div class="timeline-content">
                         <h3>版本 v5</h3>
@@ -564,18 +599,6 @@
                             <li>飛行模式現在自動包含穿牆 (Noclip) 功能。</li>
                             <li>改進第三人稱視角邏輯。</li>
                             <li>優化了按鍵綁定衝突檢測。</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="100">
-                    <div class="timeline-icon">🐛</div>
-                    <div class="timeline-content">
-                        <h3>版本 v4.5</h3>
-                        <span class="timeline-date">2025年5月5日</span>
-                        <ul>
-                            <li>修復了 ESP 在某些情況下不顯示的問題 (引入 DrawingLib 檢查)。</li>
-                            <li>修正了 `getNearestPlayer` 函數中 `goto` 語句可能導致的邏輯問題 (後續版本中進一步優化)。</li>
-                            <li>調整了 Noclip 功能的實現。</li>
                         </ul>
                     </div>
                 </div>
@@ -772,17 +795,17 @@
         if (taglineElement && !taglineElement.classList.contains('typewriter-applied')) {
             const originalText = taglineElement.innerText;
             const textLength = originalText.length;
-            taglineElement.innerText = ''; 
+            taglineElement.innerText = '';
             taglineElement.classList.add('typewriter-text');
-            const typingDuration = Math.max(2.5, textLength * 0.1); 
-            const animationDelay = '1.2s'; 
+            const typingDuration = Math.max(2.5, textLength * 0.1);
+            const animationDelay = '1.2s';
             taglineElement.style.animation = `
                 typing ${typingDuration}s steps(${textLength}, end) ${animationDelay} forwards,
                 blink-caret .75s step-end infinite ${animationDelay}
             `;
              setTimeout(() => {
                 taglineElement.innerText = originalText;
-             }, 10);
+             }, 10); // A very small delay to ensure the animation styles are applied before text is set
             taglineElement.classList.add('typewriter-applied');
         }
 
@@ -793,7 +816,7 @@
 
         if (heroTitle && heroSection) {
             heroSection.addEventListener('mousemove', (e) => {
-                if (window.innerWidth < 768) return; 
+                if (window.innerWidth < 768) return; // Disable on smaller screens
 
                 const rect = heroSection.getBoundingClientRect();
                 const x = e.clientX - rect.left;
@@ -805,8 +828,8 @@
                 const deltaX = (x - centerX) / centerX;
                 const deltaY = (y - centerY) / centerY;
 
-                const rotateY = deltaX * 3; 
-                const rotateX = -deltaY * 3; 
+                const rotateY = deltaX * 3; // Max rotation degrees
+                const rotateX = -deltaY * 3; // Max rotation degrees
 
                 heroTitle.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
             });
