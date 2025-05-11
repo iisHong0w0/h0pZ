@@ -32,6 +32,8 @@
 --
 --    又看源码，看你妹妹呀！
 --
+-- 看三小
+
 -- ========== Roblox Services ==========
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -74,8 +76,14 @@ local FAKE_LAG_TOGGLE_KEY_INIT = Enum.KeyCode.X
 local BHOP_TOGGLE_KEY_INIT = Enum.KeyCode.LeftAlt
 local ACTIVE_FEATURES_GUI_TOGGLE_KEY_INIT = Enum.KeyCode.Delete -- New key for active features GUI
 
-local TELEPORT_BEHIND_DISTANCE = 3
-local ANTI_AIM_RADIUS = 5
+local TELEPORT_BEHIND_DISTANCE_INIT = 3 -- Default distance for teleport behind
+local MIN_TELEPORT_BEHIND_DISTANCE = 1
+local MAX_TELEPORT_BEHIND_DISTANCE = 10
+
+local ANTI_AIM_RADIUS_INIT = 5 -- Default radius for anti-aim
+local MIN_ANTI_AIM_RADIUS = 2
+local MAX_ANTI_AIM_RADIUS = 15
+
 local INITIAL_FLIGHT_SPEED = 50
 local MIN_FLIGHT_SPEED = 10
 local MAX_FLIGHT_SPEED = 200
@@ -151,7 +159,9 @@ featuresConfig = {
     },
     aimbot_hold = { id = "aimbot_hold", displayName = "按住瞄準鍵", category = "瞄準", currentKey = DEFAULT_AIMBOT_HOLD_KEY_INIT, ui = {} }, -- Not typically "enabled/disabled" in the same way
     teleport_mode = {
-        id = "teleport_mode", displayName = "傳送至背後", category = "移動", isEnabled = false, currentKey = TELEPORT_KEY_INIT, ui = {}, showInActiveList = true,
+        id = "teleport_mode", displayName = "傳送至背後", category = "移動", isEnabled = false, currentKey = TELEPORT_KEY_INIT,
+        currentTeleportDistance = TELEPORT_BEHIND_DISTANCE_INIT, -- Added for slider
+        ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"anti_aim", "flight_mode", "fake_lag", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end end
             playSound("rbxassetid://9111384194", enabled and 0.5 or 0.3, enabled and 1 or 0.8)
@@ -159,7 +169,9 @@ featuresConfig = {
         end
     },
     anti_aim = {
-        id = "anti_aim", displayName = "隨機傳送 (舊AA)", category = "移動", isEnabled = false, currentKey = ANTI_AIM_KEY_INIT, ui = {}, showInActiveList = true,
+        id = "anti_aim", displayName = "隨機傳送 (舊AA)", category = "移動", isEnabled = false, currentKey = ANTI_AIM_KEY_INIT,
+        currentAntiAimRadius = ANTI_AIM_RADIUS_INIT, -- Added for slider
+        ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"teleport_mode", "flight_mode", "fake_lag", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end end
             playSound("rbxassetid://9111384194", enabled and 0.6 or 0.4, enabled and 1.2 or 0.7)
@@ -419,7 +431,7 @@ local function populateFeatureUI(config, parentFrame)
         end)
     end
 
-    if config.isEnabled ~= nil then
+    if config.isEnabled ~= nil then -- This implies it's a toggleable feature
         local toggleButton = Instance.new("TextButton"); toggleButton.Name = config.id .. "ToggleButton"; toggleButton.Parent = parentFrame
         toggleButton.Size = UDim2.new(1, 0, 0, itemHeight); toggleButton.BackgroundColor3 = theme.ElementBackground
         toggleButton.BorderSizePixel = 1; toggleButton.BorderColor3 = theme.Border; toggleButton.Font = Enum.Font.SourceSansSemibold
@@ -435,6 +447,8 @@ local function populateFeatureUI(config, parentFrame)
     if config.id == "flight_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_FLIGHT_SPEED, MAX_FLIGHT_SPEED, config.currentSpeed, "FlightSpeed", "飛行速度:"
     elseif config.id == "bhop_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_AIR_STRAFE_FORCE, MAX_AIR_STRAFE_FORCE, config.currentAirStrafeForce, "BhopForce", "連跳力度:"
     elseif config.id == "third_person" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_THIRD_PERSON_DISTANCE_Z, MAX_THIRD_PERSON_DISTANCE_Z, config.currentDistanceZ, "TPDistance", "第三人稱距離:"
+    elseif config.id == "teleport_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_TELEPORT_BEHIND_DISTANCE, MAX_TELEPORT_BEHIND_DISTANCE, config.currentTeleportDistance, "TPBehindDist", "背後距離:"
+    elseif config.id == "anti_aim" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_ANTI_AIM_RADIUS, MAX_ANTI_AIM_RADIUS, config.currentAntiAimRadius, "AARadius", "隨機半徑:"
     end
 
     if sliderMin then
@@ -458,8 +472,18 @@ local function populateFeatureUI(config, parentFrame)
         valueDisplay.Size = UDim2.new(0, valueDisplayWidth, 0, itemHeight); valueDisplay.Position = UDim2.new(0, trackWidth + sidePadding, 0, 15)
         valueDisplay.Font = Enum.Font.SourceSansSemibold; valueDisplay.TextSize = 13; valueDisplay.TextColor3 = theme.TextPrimary
         valueDisplay.TextXAlignment = Enum.TextXAlignment.Right; valueDisplay.BackgroundTransparency = 1; config.ui[sliderIdPrefix .. "ValueDisplay"] = valueDisplay
-        local function updateSliderDisplay(currentVal) local p = math.clamp((currentVal - sliderMin) / (sliderMax - sliderMin), 0, 1); sliderThumb.Position = UDim2.new(p, -sliderThumb.AbsoluteSize.X * p, 0, -2); if config.id == "third_person" then valueDisplay.Text = string.format("%.1f", currentVal) else valueDisplay.Text = tostring(math.floor(currentVal)) end end
+        
+        local function updateSliderDisplay(currentVal) 
+            local p = math.clamp((currentVal - sliderMin) / (sliderMax - sliderMin), 0, 1)
+            sliderThumb.Position = UDim2.new(p, -sliderThumb.AbsoluteSize.X * p, 0, -2)
+            if config.id == "third_person" or config.id == "teleport_mode" or config.id == "anti_aim" then 
+                valueDisplay.Text = string.format("%.1f", currentVal) -- Use 1 decimal for distances/radii
+            else 
+                valueDisplay.Text = tostring(math.floor(currentVal)) 
+            end 
+        end
         updateSliderDisplay(sliderCurrent)
+        
         local draggingSlider = false
         sliderThumb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; mainFrame.Draggable = false end end)
         UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then if draggingSlider then draggingSlider = false; mainFrame.Draggable = true end end end)
@@ -468,7 +492,12 @@ local function populateFeatureUI(config, parentFrame)
                 local mX = UserInputService:GetMouseLocation().X; local tSX = sliderTrack.AbsolutePosition.X; local tAW = sliderTrack.AbsoluteSize.X
                 if tAW == 0 then return end; local rX = mX - tSX; local p = math.clamp(rX / tAW, 0, 1)
                 local nV = sliderMin + (sliderMax - sliderMin) * p
-                if config.id == "flight_mode" then config.currentSpeed = nV elseif config.id == "bhop_mode" then config.currentAirStrafeForce = nV elseif config.id == "third_person" then config.currentDistanceZ = nV end
+                if config.id == "flight_mode" then config.currentSpeed = nV 
+                elseif config.id == "bhop_mode" then config.currentAirStrafeForce = nV 
+                elseif config.id == "third_person" then config.currentDistanceZ = nV 
+                elseif config.id == "teleport_mode" then config.currentTeleportDistance = nV
+                elseif config.id == "anti_aim" then config.currentAntiAimRadius = nV
+                end
                 updateSliderDisplay(nV)
             end
         end)
@@ -656,7 +685,8 @@ local function teleportBehindPlayer(targetPlayer)
     local hrp = localChar:FindFirstChild("HumanoidRootPart")
     local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
     if not hrp or not targetHrp then return end
-    hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, TELEPORT_BEHIND_DISTANCE) * CFrame.Angles(0, math.pi, 0)
+    local distance = featuresConfig.teleport_mode.currentTeleportDistance -- Use configured distance
+    hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, distance) * CFrame.Angles(0, math.pi, 0)
 end
 
 -- Function to teleport randomly around target
@@ -668,8 +698,9 @@ local function teleportRandomlyAroundPlayer(targetPlayer)
     local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
     if not hrp or not targetHrp then return end
     local randomAngle = math.random() * 2 * math.pi
-    local offsetX = math.cos(randomAngle) * ANTI_AIM_RADIUS
-    local offsetZ = math.sin(randomAngle) * ANTI_AIM_RADIUS
+    local radius = featuresConfig.anti_aim.currentAntiAimRadius -- Use configured radius
+    local offsetX = math.cos(randomAngle) * radius
+    local offsetZ = math.sin(randomAngle) * radius
     hrp.CFrame = targetHrp.CFrame * CFrame.new(offsetX, 0, offsetZ)
 end
 
