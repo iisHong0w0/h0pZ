@@ -1,12 +1,37 @@
 -- 看三小
--- 看三小
--- 看三小
--- 看三小
--- 看三小
--- 看三小
--- 看三小
--- 看三小
-
+--
+--                                         ,s555SB@@&                          
+--                                     :9H####@@@@@Xi                        
+--                                     1@@@@@@@@@@@@@@8                       
+--                                   ,8@@@@@@@@@B@@@@@@8                      
+--                                  :B@@@@X3hi8Bs;B@@@@@Ah,                   
+--             ,8i                  r@@@B:     1S ,M@@@@@@#8;                 
+--            1AB35.i:               X@@8 .   SGhr ,A@@@@@@@@S                
+--            1@h31MX8                18Hhh3i .i3r ,A@@@@@@@@@5               
+--            ;@&i,58r5                 rGSS:     :B@@@@@@@@@@A               
+--             1#i  . 9i                 hX.  .: .5@@@@@@@@@@@1               
+--              sG1,  ,G53s.              9#Xi;hS5 3B@@@@@@@B1                
+--               .h8h.,A@@@MXSs,           #@H1:    3ssSSX@1                  
+--               s ,@@@@@@@@@@@@Xhi,       r#@@X1s9M8    .GA981               
+--               ,. rS8H#@@@@@@@@@@#HG51;.  .h31i;9@r    .8@@@@BS;i;          
+--                .19AXXXAB@@@@@@@@@@@@@@#MHXG893hrX#XGGXM@@@@@@@@@@MS        
+--                s@@MM@@@hsX#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&,      
+--              :GB@#3G@@Brs ,1GM@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@B,     
+--            .hM@@@#@@#MX 51  r;iSGAM@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@8     
+--          :3B@@@@@@@@@@@&9@h :Gs   .;sSXH@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@:    
+--      s&HA#@@@@@@@@@@@@@@M89A;.8S.       ,r3@@@@@@@@@@@@@@@@@@@@@@@@@@@r    
+--   ,13B@@@@@@@@@@@@@@@@@@@5 5B3 ;.         ;@@@@@@@@@@@@@@@@@@@@@@@@@@@i    
+--  5#@@#&@@@@@@@@@@@@@@@@@@9  .39:          ;@@@@@@@@@@@@@@@@@@@@@@@@@@@;    
+--  9@@@X:MM@@@@@@@@@@@@@@@#;    ;31.         H@@@@@@@@@@@@@@@@@@@@@@@@@@:    
+--   SH#@B9.rM@@@@@@@@@@@@@B       :.         3@@@@@@@@@@@@@@@@@@@@@@@@@@5    
+--     ,:.   9@@@@@@@@@@@#HB5                 .M@@@@@@@@@@@@@@@@@@@@@@@@@B    
+--           ,ssirhSM@&1;i19911i,.             s@@@@@@@@@@@@@@@@@@@@@@@@@@S   
+--              ,,,rHAri1h1rh&@#353Sh:          8@@@@@@@@@@@@@@@@@@@@@@@@@#:  
+--            .A3hH@#5S553&@@#h   i:i9S          #@@@@@@@@@@@@@@@@@@@@@@@@@A. 
+--
+--
+--    又看源码，看你妹妹呀！
+--
 -- ========== Roblox Services ==========
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -101,6 +126,7 @@ print("DEBUG: Core state variables initialized.")
 local setFlightPhysics, destroyGhostModel, createOrUpdateGhostModel, restoreCamera, updateFeatureToggleButton, updateFeatureKeyDisplay, setNoclipState
 local onBhopJumpRequest, onBhopHumanoidStateChanged, connectBhopStateChanged, disconnectBhopStateChanged
 local updateActiveFeaturesDisplay -- For the new GUI
+local getNearestPlayerAbsolute, getNearestVisiblePlayer -- Declare new functions
 
 local function playSound(soundId, volume, pitch)
     local sound = Instance.new("Sound")
@@ -241,7 +267,7 @@ controlPanelGui.Parent = PlayerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 550, 0, 400) 
+mainFrame.Size = UDim2.new(0, 550, 0, 400)
 mainFrame.Position = UDim2.new(0.5, -mainFrame.Size.X.Offset / 2, 0.5, -mainFrame.Size.Y.Offset / 2)
 mainFrame.BackgroundColor3 = theme.Background
 mainFrame.BorderSizePixel = 1
@@ -318,7 +344,7 @@ contentArea.BorderSizePixel = 0
 local tabCategories = {"瞄準", "透視", "移動", "雜項", "設定"}
 local tabButtons = {}
 local contentFrames = {}
-local contentListFrames = {} 
+local contentListFrames = {}
 local activeTab = nil
 
 local itemPadding = 8
@@ -358,7 +384,7 @@ for i, categoryName in ipairs(tabCategories) do
             contentFrames[activeTab].Visible = false
         end
         activeTab = categoryName
-        tabButton.TextColor3 = theme.Accent; tabButton.BackgroundColor3 = theme.Background 
+        tabButton.TextColor3 = theme.Accent; tabButton.BackgroundColor3 = theme.Background
         if contentFrames[categoryName] then contentFrames[categoryName].Visible = true end
     end)
 end
@@ -437,14 +463,14 @@ local function populateFeatureUI(config, parentFrame)
         local draggingSlider = false
         sliderThumb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; mainFrame.Draggable = false end end)
         UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then if draggingSlider then draggingSlider = false; mainFrame.Draggable = true end end end)
-        UserInputService.InputChanged:Connect(function(i) 
-            if draggingSlider and i.UserInputType == Enum.UserInputType.MouseMovement then 
+        UserInputService.InputChanged:Connect(function(i)
+            if draggingSlider and i.UserInputType == Enum.UserInputType.MouseMovement then
                 local mX = UserInputService:GetMouseLocation().X; local tSX = sliderTrack.AbsolutePosition.X; local tAW = sliderTrack.AbsoluteSize.X
                 if tAW == 0 then return end; local rX = mX - tSX; local p = math.clamp(rX / tAW, 0, 1)
                 local nV = sliderMin + (sliderMax - sliderMin) * p
                 if config.id == "flight_mode" then config.currentSpeed = nV elseif config.id == "bhop_mode" then config.currentAirStrafeForce = nV elseif config.id == "third_person" then config.currentDistanceZ = nV end
                 updateSliderDisplay(nV)
-            end 
+            end
         end)
     end
 end
@@ -548,8 +574,6 @@ local cueDot=Instance.new("Frame"); cueDot.Name="CueDot"; cueDot.Size=UDim2.from
 local dotCorner=Instance.new("UICorner"); dotCorner.CornerRadius=UDim.new(0.5,0); dotCorner.Parent=cueDot
 print("DEBUG: Visual Cue GUI created.")
 
--- (OMITTED CORE LOGIC FUNCTIONS FOR BREVITY - PASTE THEM HERE FROM PREVIOUS VERSION)
--- Ensure functions like getNearestPlayer, teleportBehindPlayer, createEspForPlayer, etc. are included.
 setFlightPhysics = function(enabled) local localChar = LocalPlayer.Character; local hrp = localChar and localChar:FindFirstChild("HumanoidRootPart"); local humanoid_flight = localChar and localChar:FindFirstChildOfClass("Humanoid"); if not hrp or not humanoid_flight then return end; if enabled then if not bodyGyro or not bodyGyro.Parent then if bodyGyro then bodyGyro:Destroy() end; bodyGyro = Instance.new("BodyGyro"); bodyGyro.P = 5000; bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9); bodyGyro.CFrame = hrp.CFrame; bodyGyro.Parent = hrp; end; if not bodyVelocity or not bodyVelocity.Parent then if bodyVelocity then bodyVelocity:Destroy() end; bodyVelocity = Instance.new("BodyVelocity"); bodyVelocity.P = 1250; bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9); bodyVelocity.Velocity = Vector3.new(0,0,0); bodyVelocity.Parent = hrp; end; humanoid_flight.AutoRotate = false; else if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil; end; if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil; end; humanoid_flight.AutoRotate = true; end end
 restoreCamera = function() Camera.CameraType = originalCameraType; pcall(function() Camera.Focus = originalCameraFocus end); lastThirdPersonPos = nil; end
 setNoclipState = function(enabled) local character = LocalPlayer.Character; if not character then return end; local humanoid_noclip = character:FindFirstChildOfClass("Humanoid"); if not humanoid_noclip then return end; if enabled then if humanoid_noclip:GetState() ~= Enum.HumanoidStateType.Physics then humanoid_noclip:ChangeState(Enum.HumanoidStateType.Physics) end; task.wait(); for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end else for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end; if humanoid_noclip:GetState() == Enum.HumanoidStateType.Physics then humanoid_noclip:ChangeState(Enum.HumanoidStateType.GettingUp) end end end
@@ -562,9 +586,69 @@ connectBhopStateChanged = function() if bhopStateChangedConnection then return e
 disconnectBhopStateChanged = function() if bhopStateChangedConnection then bhopStateChangedConnection:Disconnect(); bhopStateChangedConnection = nil end; isBhopJumping = false; canBhopAirStrafe = false end
 createEspForPlayer = function(player) if not DrawingLib then return end; if espElements[player] then return end; local els={}; els.Box=DrawingLib.new("Quad"); els.Box.Color=ESP_BOX_COLOR; els.Box.Thickness=1; els.Box.Filled=false; els.Box.Visible=false; els.Name=DrawingLib.new("Text"); els.Name.Text=player.Name; els.Name.Color=ESP_TEXT_COLOR; els.Name.Size=ESP_TEXT_SIZE; els.Name.Center=true; els.Name.Outline=true; els.Name.Visible=false; els.Health=DrawingLib.new("Text"); els.Health.Text="100/100"; els.Health.Color=ESP_TEXT_COLOR; els.Health.Size=ESP_HEALTH_SIZE; els.Health.Center=true; els.Health.Outline=true; els.Health.Visible=false; espElements[player]=els; end
 removeEspForPlayer = function(player) if espElements[player] then local els=espElements[player]; if els.Box then els.Box:Remove() end; if els.Name then els.Name:Remove() end; if els.Health then els.Health:Remove() end; espElements[player]=nil end end
-getNearestPlayer = function() local cp,sd=nil,math.huge; local lc=LocalPlayer.Character; local lHRP=lc and lc:FindFirstChild("HumanoidRootPart"); if not lc or not lHRP then return nil end; for _,p in pairs(Players:GetPlayers()) do local c=p.Character; local ht=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChild("Head"); local hum=c and c:FindFirstChildOfClass("Humanoid"); if p~=LocalPlayer and ht and h and hum and hum.Health>0 then local d=(ht.Position-lHRP.Position).Magnitude; if d<sd then local ro=Camera.CFrame.Position; local rd=(h.Position-ro).Unit*d; local rp=RaycastParams.new(); local fl={lc,Camera,controlPanelGui,cueGui,activeFeaturesScreenGui}; if ghostModel and ghostModel.Parent then table.insert(fl,ghostModel) end; rp.FilterDescendantsInstances=fl; rp.FilterType=Enum.RaycastFilterType.Exclude; local rr=Workspace:Raycast(ro,rd,rp); if not rr or rr.Instance:IsDescendantOf(c) then sd=d; cp=p end end end end; return cp end
 
--- Function to teleport player behind target (simplified, add your actual logic)
+-- Function to get nearest player regardless of visibility (for teleport features)
+getNearestPlayerAbsolute = function()
+    local cp, sd = nil, math.huge
+    local lc = LocalPlayer.Character
+    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
+    if not lc or not lHRP then return nil end
+
+    for _, p in pairs(Players:GetPlayers()) do
+        local c = p.Character
+        local ht = c and c:FindFirstChild("HumanoidRootPart")
+        -- Head is not strictly needed here for distance check but kept for consistency with original structure
+        local h = c and c:FindFirstChild("Head")
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+
+        if p ~= LocalPlayer and ht and h and hum and hum.Health > 0 then
+            local d = (ht.Position - lHRP.Position).Magnitude
+            if d < sd then
+                sd = d
+                cp = p
+            end
+        end
+    end
+    return cp
+end
+
+-- Function to get nearest VISIBLE player (for aimbot/triggerbot)
+getNearestVisiblePlayer = function()
+    local cp, sd = nil, math.huge
+    local lc = LocalPlayer.Character
+    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
+    if not lc or not lHRP then return nil end
+
+    for _, p in pairs(Players:GetPlayers()) do
+        local c = p.Character
+        local ht = c and c:FindFirstChild("HumanoidRootPart")
+        local h = c and c:FindFirstChild("Head") -- Head is important for visibility check and aiming
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+
+        if p ~= LocalPlayer and ht and h and hum and hum.Health > 0 then
+            local d = (ht.Position - lHRP.Position).Magnitude
+            if d < sd then
+                local ro = Camera.CFrame.Position
+                local rd = (h.Position - ro).Unit * d -- Ray direction towards the Head
+                local rp = RaycastParams.new()
+                local fl = {lc, Camera, controlPanelGui, cueGui, activeFeaturesScreenGui}
+                if ghostModel and ghostModel.Parent then table.insert(fl, ghostModel) end
+                rp.FilterDescendantsInstances = fl
+                rp.FilterType = Enum.RaycastFilterType.Exclude
+                local rr = Workspace:Raycast(ro, rd, rp)
+
+                if not rr or rr.Instance:IsDescendantOf(c) then -- If no hit or hit is part of the target character
+                    sd = d
+                    cp = p
+                end
+            end
+        end
+    end
+    return cp
+end
+
+
+-- Function to teleport player behind target
 local function teleportBehindPlayer(targetPlayer)
     local localChar = LocalPlayer.Character
     local targetChar = targetPlayer.Character
@@ -575,7 +659,7 @@ local function teleportBehindPlayer(targetPlayer)
     hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, TELEPORT_BEHIND_DISTANCE) * CFrame.Angles(0, math.pi, 0)
 end
 
--- Function to teleport randomly around target (simplified, add your actual logic)
+-- Function to teleport randomly around target
 local function teleportRandomlyAroundPlayer(targetPlayer)
     local localChar = LocalPlayer.Character
     local targetChar = targetPlayer.Character
@@ -611,7 +695,7 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
 
         local nearestMovementTarget = nil
         if featuresConfig.teleport_mode.isEnabled or featuresConfig.anti_aim.isEnabled then
-            nearestMovementTarget = getNearestPlayer()
+            nearestMovementTarget = getNearestPlayerAbsolute() -- Use absolute for movement
         end
 
         if featuresConfig.flight_mode.isEnabled then
@@ -665,7 +749,7 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
             local anchor = (character_cam and character_cam:FindFirstChild("Head")) or hrp
             if anchor then
                 local anchorPos = anchor.Position
-                local refCamCF = Camera.CFrame 
+                local refCamCF = Camera.CFrame
                 local currentTPDistanceZ = featuresConfig.third_person.currentDistanceZ
                 local desiredPos = anchorPos + (-refCamCF.LookVector.Unit * currentTPDistanceZ) + (refCamCF.RightVector.Unit * THIRD_PERSON_OFFSET_XY.X) + (refCamCF.UpVector.Unit * THIRD_PERSON_OFFSET_XY.Y)
                 local rayOriginForCollision = anchorPos
@@ -682,7 +766,7 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
                 if hitResult then desiredPos = hitResult.Position - rayDirectionForCollision * 0.5 end
                 if not lastThirdPersonPos then lastThirdPersonPos = desiredPos end
                 lastThirdPersonPos = lastThirdPersonPos:Lerp(desiredPos, 1 - THIRD_PERSON_SMOOTHING)
-                local lookAtTarget = (charHead or hrp).Position + (charHead or hrp).CFrame.LookVector * 5 
+                local lookAtTarget = (charHead or hrp).Position + (charHead or hrp).CFrame.LookVector * 5
                 calculatedCameraCFrame = CFrame.new(lastThirdPersonPos, lookAtTarget)
                 if Camera.CameraType ~= Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Scriptable end
             end
@@ -698,11 +782,11 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
         local aimbotOverrideCFrame = nil
 
         if featuresConfig.aimbot_module.isEnabled and isAiming then
-            aimbotTargetPlayer = getNearestPlayer()
+            aimbotTargetPlayer = getNearestVisiblePlayer() -- Use visible for aimbot
             if aimbotTargetPlayer then
                 local targetHead = aimbotTargetPlayer.Character and aimbotTargetPlayer.Character:FindFirstChild("Head")
                 if targetHead then
-                    isLocked = true
+                    isLocked = true -- isLocked will now depend on a visible target
                     local aimFromPosition
                     if featuresConfig.third_person.isEnabled and lastThirdPersonPos then aimFromPosition = lastThirdPersonPos
                     else aimFromPosition = Camera.CFrame.Position end
@@ -721,7 +805,7 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
         
         cueDot.BackgroundColor3 = isLocked and DOT_COLOR_LOCKED or DOT_COLOR_NOLOCK
 
-        local shouldBeShooting = isLocked
+        local shouldBeShooting = isLocked -- Auto-shoot is tied to a successful (visible) lock
         if shouldBeShooting then
             if currentTime - lastClickTime >= TRIGGERBOT_CLICK_INTERVAL then
                 if typeof(mouse1press) == "function" then pcall(mouse1press) end
@@ -787,7 +871,7 @@ inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEve
     local mainPanelActive = mainFrame and mainFrame.Visible and mainFrame.Active
     local activeListActive = activeFeaturesFrame and activeFeaturesFrame.Visible and activeFeaturesFrame.Active
 
-    if gameProcessedEvent and not (mainPanelActive or activeListActive) then 
+    if gameProcessedEvent and not (mainPanelActive or activeListActive) then
       local isAimbotHoldKey = false
       if featuresConfig.aimbot_hold and input.UserInputType == featuresConfig.aimbot_hold.currentKey then isAimbotHoldKey = true end
       if not isAimbotHoldKey then return end
@@ -799,12 +883,12 @@ inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEve
                  if not (cfg.id == "aimbot_hold" and input.UserInputType:IsA("UserInputType") and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3)) then return end
             end
 
-            if fid=="gui_toggle" then 
-                cfg.isEnabled=not cfg.isEnabled; 
-                if mainFrame then mainFrame.Visible=cfg.isEnabled end; 
+            if fid=="gui_toggle" then
+                cfg.isEnabled=not cfg.isEnabled;
+                if mainFrame then mainFrame.Visible=cfg.isEnabled end;
                 UserInputService.MouseIconEnabled=(cfg.isEnabled or featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame.Visible)
                 if cfg.isEnabled then UserInputService.MouseBehavior = Enum.MouseBehavior.Default else if not (featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame.Visible) then UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end end
-                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end 
+                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end
                 if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
             elseif fid=="active_features_gui_toggle" then
                 cfg.isEnabled = not cfg.isEnabled
@@ -815,12 +899,12 @@ inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEve
                 if cfg.isEnabled and activeFeaturesFrame.Visible then UserInputService.MouseBehavior = Enum.MouseBehavior.Default else if not featuresConfig.gui_toggle.isEnabled then UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end end
                 if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
             elseif fid == "aimbot_hold" then -- No toggle action
-            else 
-                cfg.isEnabled=not cfg.isEnabled; 
-                if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end; 
-                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end 
+            else
+                cfg.isEnabled=not cfg.isEnabled;
+                if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
+                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end
             end
-            return 
+            return
         end
     end
 end)
@@ -841,7 +925,7 @@ local function cleanup()
     if inputConn then inputConn:Disconnect(); inputConn=nil end
     if setFlightPhysics then setFlightPhysics(false) end
     if setNoclipState then setNoclipState(false) end
-    if disconnectBhopStateChanged then disconnectBhopStateChanged() end 
+    if disconnectBhopStateChanged then disconnectBhopStateChanged() end
     if destroyGhostModel then destroyGhostModel("Script cleanup") end
     for player, _ in pairs(espElements) do removeEspForPlayer(player) end
     if controlPanelGui and controlPanelGui.Parent then controlPanelGui:Destroy() end
