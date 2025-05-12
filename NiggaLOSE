@@ -74,13 +74,13 @@ local FLIGHT_TOGGLE_KEY_INIT = Enum.KeyCode.V
 local THIRD_PERSON_TOGGLE_KEY_INIT = Enum.KeyCode.T
 local FAKE_LAG_TOGGLE_KEY_INIT = Enum.KeyCode.X
 local BHOP_TOGGLE_KEY_INIT = Enum.KeyCode.LeftAlt
-local ACTIVE_FEATURES_GUI_TOGGLE_KEY_INIT = Enum.KeyCode.Delete -- New key for active features GUI
+local ACTIVE_FEATURES_GUI_TOGGLE_KEY_INIT = Enum.KeyCode.Delete
 
-local TELEPORT_BEHIND_DISTANCE_INIT = 3 -- Default distance for teleport behind
+local TELEPORT_BEHIND_DISTANCE_INIT = 3
 local MIN_TELEPORT_BEHIND_DISTANCE = 1
 local MAX_TELEPORT_BEHIND_DISTANCE = 10
 
-local ANTI_AIM_RADIUS_INIT = 5 -- Default radius for anti-aim
+local ANTI_AIM_RADIUS_INIT = 5
 local MIN_ANTI_AIM_RADIUS = 2
 local MAX_ANTI_AIM_RADIUS = 15
 
@@ -88,7 +88,10 @@ local INITIAL_FLIGHT_SPEED = 50
 local MIN_FLIGHT_SPEED = 10
 local MAX_FLIGHT_SPEED = 200
 local FLIGHT_VERTICAL_SPEED = 30
-local TRIGGERBOT_CLICK_INTERVAL = 0
+
+local TRIGGERBOT_CLICK_INTERVAL_MS_INIT = 0
+local MIN_TRIGGERBOT_DELAY_MS = 0
+local MAX_TRIGGERBOT_DELAY_MS = 5000
 
 local DEFAULT_AIR_STRAFE_FORCE = 1234
 local MIN_AIR_STRAFE_FORCE = 100
@@ -107,11 +110,21 @@ local THIRD_PERSON_SMOOTHING = 0.1
 local GHOST_DELAY_SECONDS = 1
 local GHOST_TRANSPARENCY = 0.5
 local MIN_REAL_CFRAME_UPDATE_INTERVAL = 0.5
+
+-- Hitmarker Configuration
+local HITMARKER_CHECK_INTERVAL = 0.1 -- Seconds between health checks
+local HITMARKER_DURATION = 0.3 -- Seconds the hitmarker stays visible
+local HITMARKER_TEXT = "X"
+local DEFAULT_HITMARKER_SIZE = 30
+local MIN_HITMARKER_SIZE = 10
+local MAX_HITMARKER_SIZE = 100
+local HITMARKER_COLOR = Color3.fromRGB(255, 255, 255) -- White
+local HITMARKER_OUTLINE_COLOR = Color3.fromRGB(0, 0, 0) -- Black Outline
+
 print("DEBUG: Initial default configurations set.")
 
 -- ========== State Variables ==========
 local espElements = {}
-local lastShootingState = false
 local lastClickTime = 0
 local bodyVelocity = nil
 local bodyGyro = nil
@@ -127,28 +140,43 @@ local originalHumanoidState = nil
 local isBhopJumping = false
 local canBhopAirStrafe = false
 local bhopStateChangedConnection = nil
-local activeFeaturesGuiVisible = true -- State for the new active features GUI
+local activeFeaturesGuiVisible = true
+local wasTryingToShootLastFrame = false
+
+-- Hitmarker State
+local lastCheckedHealth = {} -- [Player] = health
+local hitmarkerVisibleUntil = 0 -- Timestamp (tick())
+local currentHitTarget = nil -- Stores the Player instance of the current hit target for tracking
+local lastHealthCheckTime = 0 -- For timing health checks
+
 print("DEBUG: Core state variables initialized.")
 
 -- Forward declaration
 local setFlightPhysics, destroyGhostModel, createOrUpdateGhostModel, restoreCamera, updateFeatureToggleButton, updateFeatureKeyDisplay, setNoclipState
 local onBhopJumpRequest, onBhopHumanoidStateChanged, connectBhopStateChanged, disconnectBhopStateChanged
-local updateActiveFeaturesDisplay -- For the new GUI
-local getNearestPlayerAbsolute, getNearestVisiblePlayer -- Declare new functions
+local updateActiveFeaturesDisplay
+local getNearestPlayerAbsolute, getNearestVisiblePlayer
+local findNearestEnemy -- Added for Hitmarker
 
+-- General Sound Function (Used by other features)
 local function playSound(soundId, volume, pitch)
-    local sound = Instance.new("Sound")
-    sound.SoundId = soundId
-    sound.Volume = volume
-    sound.Pitch = pitch
-    sound.Parent = SoundService
-    sound:Play()
-    sound.Ended:Connect(function() sound:Destroy() end)
+    pitch = pitch or 1 -- Default pitch if not provided
+    local sound = Instance.new("Sound"); sound.SoundId = soundId; sound.Volume = volume; sound.Pitch = pitch
+    sound.Parent = SoundService; sound:Play(); sound.Ended:Connect(function() sound:Destroy() end)
 end
 
 -- ========== Features Configuration & State Management Table ==========
 featuresConfig = {
+    -- ... (Aiming, ESP, Movement categories remain the same) ...
     aimbot_module = { id = "aimbot_module", displayName = "自動瞄準模組", category = "瞄準", isEnabled = true, ui = {}, showInActiveList = true },
+    triggerbot_module = {
+        id = "triggerbot_module", displayName = "自動開槍", category = "瞄準", isEnabled = true,
+        currentDelayMs = TRIGGERBOT_CLICK_INTERVAL_MS_INIT, ui = {}, showInActiveList = true,
+        onToggle = function(self, enabled)
+            if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
+            playSound("rbxassetid://1309223513", enabled and 0.4 or 0.2, enabled and 1.5 or 0.8)
+        end
+    },
     esp_module = {
         id = "esp_module", displayName = "ESP透視模組", category = "透視", isEnabled = DrawingLib ~= nil, ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
@@ -157,24 +185,22 @@ featuresConfig = {
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
-    aimbot_hold = { id = "aimbot_hold", displayName = "按住瞄準鍵", category = "瞄準", currentKey = DEFAULT_AIMBOT_HOLD_KEY_INIT, ui = {} }, -- Not typically "enabled/disabled" in the same way
+    aimbot_hold = { id = "aimbot_hold", displayName = "按住瞄準鍵", category = "瞄準", currentKey = DEFAULT_AIMBOT_HOLD_KEY_INIT, ui = {} },
     teleport_mode = {
         id = "teleport_mode", displayName = "傳送至背後", category = "移動", isEnabled = false, currentKey = TELEPORT_KEY_INIT,
-        currentTeleportDistance = TELEPORT_BEHIND_DISTANCE_INIT, -- Added for slider
-        ui = {}, showInActiveList = true,
+        currentTeleportDistance = TELEPORT_BEHIND_DISTANCE_INIT, ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"anti_aim", "flight_mode", "fake_lag", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end end
-            playSound("rbxassetid://9111384194", enabled and 0.5 or 0.3, enabled and 1 or 0.8)
+            playSound("rbxassetid://9111384194", 0.5, enabled and 1 or 0.8)
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
     anti_aim = {
         id = "anti_aim", displayName = "隨機傳送 (舊AA)", category = "移動", isEnabled = false, currentKey = ANTI_AIM_KEY_INIT,
-        currentAntiAimRadius = ANTI_AIM_RADIUS_INIT, -- Added for slider
-        ui = {}, showInActiveList = true,
+        currentAntiAimRadius = ANTI_AIM_RADIUS_INIT, ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"teleport_mode", "flight_mode", "fake_lag", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end end
-            playSound("rbxassetid://9111384194", enabled and 0.6 or 0.4, enabled and 1.2 or 0.7)
+            playSound("rbxassetid://9111384194", 0.6, enabled and 1.2 or 0.7)
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
@@ -183,7 +209,7 @@ featuresConfig = {
         onToggle = function(self, enabled)
             if setFlightPhysics then setFlightPhysics(enabled) end; if setNoclipState then setNoclipState(enabled) end
             if enabled then for _, fid in ipairs({"teleport_mode", "anti_aim", "fake_lag", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end end
-            playSound("rbxassetid://9111384194", enabled and 0.6 or 0.4, enabled and 1.4 or 0.6)
+            playSound("rbxassetid://9111384194", 0.6, enabled and 1.4 or 0.6)
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
@@ -192,7 +218,7 @@ featuresConfig = {
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"teleport_mode", "anti_aim", "flight_mode", "fake_lag"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end; if connectBhopStateChanged then connectBhopStateChanged() end
             else if disconnectBhopStateChanged then disconnectBhopStateChanged() end end
-            playSound("rbxassetid://1309223513", enabled and 0.5 or 0.3, enabled and 1.1 or 0.9)
+            playSound("rbxassetid://1309223513", 0.5, enabled and 1.1 or 0.9)
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
@@ -204,19 +230,34 @@ featuresConfig = {
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
+     hitmarker = { -- NEW HITMARKER FEATURE
+        id = "hitmarker", displayName = "命中標記", category = "雜項", isEnabled = true,
+        currentHitmarkerSize = DEFAULT_HITMARKER_SIZE, -- Size controlled by slider
+        ui = {}, showInActiveList = true,
+        onToggle = function(self, enabled)
+            -- Find the hitmarkerLabel (declared later)
+             local hmLabel = hitmarkerScreenGui and hitmarkerScreenGui:FindFirstChild("HitmarkerX")
+             if not enabled and hmLabel then
+                 hmLabel.Visible = false
+                 currentHitTarget = nil -- Stop tracking if disabled
+             end
+             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
+             -- No sound for toggling hitmarker itself
+        end
+    },
     fake_lag = {
         id = "fake_lag", displayName = "延遲假身", category = "移動", isEnabled = false, currentKey = FAKE_LAG_TOGGLE_KEY_INIT, ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
             if enabled then for _, fid in ipairs({"teleport_mode", "anti_aim", "flight_mode", "bhop_mode"}) do local cfg = featuresConfig[fid]; if cfg.isEnabled then cfg.isEnabled = false; if cfg.ui.toggleButton then updateFeatureToggleButton(cfg) end; if cfg.onToggle then cfg.onToggle(cfg, false) end end end; lastRealCFrameAppliedTime = 0; lastAppliedDelayedCFrame = nil; cframeHistory = {}; if LocalPlayer.Character and createOrUpdateGhostModel then createOrUpdateGhostModel() end
             else if destroyGhostModel then destroyGhostModel("FakeLag toggled OFF") end end
-            playSound("rbxassetid://9111384194", enabled and 0.6 or 0.3, enabled and 1.5 or 0.5)
+            playSound("rbxassetid://9111384194", 0.6, enabled and 1.5 or 0.5)
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
     gui_toggle = { id = "gui_toggle", displayName = "開關主介面", category = "設定", isEnabled = true, currentKey = TOGGLE_GUI_KEY_INIT, ui = {}, onToggle = function() if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end end },
     active_features_gui_toggle = { id = "active_features_gui_toggle", displayName = "開關啟用列表", category = "設定", isEnabled = true, currentKey = ACTIVE_FEATURES_GUI_TOGGLE_KEY_INIT, ui = {} }
 }
-print("DEBUG: featuresConfig initialized with categories and showInActiveList.")
+print("DEBUG: featuresConfig initialized with hitmarker.")
 
 if not DrawingLib and featuresConfig.esp_module.isEnabled then featuresConfig.esp_module.isEnabled = false end
 
@@ -227,7 +268,7 @@ function getKeyName(inputObject)
     return s and n or "錯誤"
 end
 
-local theme = { -- Moved theme here to be accessible by updateFeatureToggleButton
+local theme = {
     Background = Color3.fromRGB(30, 32, 37), LighterBackground = Color3.fromRGB(40, 42, 48), ElementBackground = Color3.fromRGB(47, 49, 54),
     Accent = Color3.fromRGB(0, 170, 255), TextPrimary = Color3.fromRGB(220, 221, 222), TextSecondary = Color3.fromRGB(185, 187, 190),
     Border = Color3.fromRGB(20, 22, 25), Success = Color3.fromRGB(70, 180, 70), Failure = Color3.fromRGB(200, 70, 70),
@@ -238,15 +279,13 @@ updateFeatureToggleButton = function(featureConfig)
     if featureConfig and featureConfig.ui and featureConfig.ui.toggleButton then
         local btn = featureConfig.ui.toggleButton
         if featureConfig.isEnabled then
-            btn.Text = featureConfig.displayName; btn.TextColor3 = theme.Success -- Using displayName directly
-            btn.BackgroundColor3 = theme.ElementBackground -- Keep background consistent, border/text indicates state
-            btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Success
+            btn.Text = featureConfig.displayName; btn.TextColor3 = theme.Success
+            btn.BackgroundColor3 = theme.ElementBackground; btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Success
         else
             btn.Text = featureConfig.displayName; btn.TextColor3 = theme.TextSecondary
-            btn.BackgroundColor3 = theme.ElementBackground
-            btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Border
+            btn.BackgroundColor3 = theme.ElementBackground; btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Border
         end
-         if featureConfig.id == "gui_toggle" or featureConfig.id == "active_features_gui_toggle" then -- Special case for GUI toggles themselves
+         if featureConfig.id == "gui_toggle" or featureConfig.id == "active_features_gui_toggle" then
              btn.Text = (featureConfig.isEnabled and "[ON] " or "[OFF] ") .. featureConfig.displayName
              btn.BorderColor3 = featureConfig.isEnabled and theme.Success or theme.Failure
          end
@@ -272,329 +311,124 @@ end
 -- ========== New GUI Creation (CS2 Inspired) ==========
 print("DEBUG: Creating new CS2-inspired Control Panel GUI v6...")
 local controlPanelGui = Instance.new("ScreenGui")
-controlPanelGui.Name = "SolaraPanel_v6_Main"
-controlPanelGui.ResetOnSpawn = false
-controlPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+controlPanelGui.Name = "SolaraPanel_v6_Main"; controlPanelGui.ResetOnSpawn = false; controlPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 controlPanelGui.Parent = PlayerGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 550, 0, 400)
+mainFrame.Name = "MainFrame"; mainFrame.Size = UDim2.new(0, 550, 0, 400)
 mainFrame.Position = UDim2.new(0.5, -mainFrame.Size.X.Offset / 2, 0.5, -mainFrame.Size.Y.Offset / 2)
-mainFrame.BackgroundColor3 = theme.Background
-mainFrame.BorderSizePixel = 1
-mainFrame.BorderColor3 = theme.Border
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = controlPanelGui
-mainFrame.Visible = featuresConfig.gui_toggle.isEnabled
+mainFrame.BackgroundColor3 = theme.Background; mainFrame.BorderSizePixel = 1; mainFrame.BorderColor3 = theme.Border
+mainFrame.Active = true; mainFrame.Draggable = true; mainFrame.Parent = controlPanelGui; mainFrame.Visible = featuresConfig.gui_toggle.isEnabled
 
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"; titleBar.Parent = mainFrame; titleBar.Size = UDim2.new(1, 0, 0, 30)
 titleBar.BackgroundColor3 = theme.LighterBackground; titleBar.BorderSizePixel = 0
 
--- START OF LOGO AND WEBSITE TEXT INTEGRATION
-local logoAssetId = "rbxassetid://124006968336886"
-local logoSize = 24
-local titleBarPadding = 5
-
--- Left Logo
+local logoAssetId = "rbxassetid://124006968336886"; local logoSize = 24; local titleBarPadding = 5
 local logoLeft = Instance.new("ImageLabel")
-logoLeft.Name = "LogoLeft"
-logoLeft.Parent = titleBar
-logoLeft.Size = UDim2.new(0, logoSize, 0, logoSize)
-logoLeft.Position = UDim2.new(0, titleBarPadding, 0.5, -logoSize/2)
-logoLeft.Image = logoAssetId
-logoLeft.BackgroundTransparency = 1
-logoLeft.ScaleType = Enum.ScaleType.Fit
-
--- Right Logo
+logoLeft.Name = "LogoLeft"; logoLeft.Parent = titleBar; logoLeft.Size = UDim2.new(0, logoSize, 0, logoSize); logoLeft.Position = UDim2.new(0, titleBarPadding, 0.5, -logoSize/2)
+logoLeft.Image = logoAssetId; logoLeft.BackgroundTransparency = 1; logoLeft.ScaleType = Enum.ScaleType.Fit
 local logoRight = Instance.new("ImageLabel")
-logoRight.Name = "LogoRight"
-logoRight.Parent = titleBar
-logoRight.Size = UDim2.new(0, logoSize, 0, logoSize)
-logoRight.Position = UDim2.new(1, -(logoSize + titleBarPadding), 0.5, -logoSize/2)
-logoRight.Image = logoAssetId
-logoRight.BackgroundTransparency = 1
-logoRight.ScaleType = Enum.ScaleType.Fit
-
--- Website Text (to the left of Right Logo)
+logoRight.Name = "LogoRight"; logoRight.Parent = titleBar; logoRight.Size = UDim2.new(0, logoSize, 0, logoSize); logoRight.Position = UDim2.new(1, -(logoSize + titleBarPadding), 0.5, -logoSize/2)
+logoRight.Image = logoAssetId; logoRight.BackgroundTransparency = 1; logoRight.ScaleType = Enum.ScaleType.Fit
 local websiteLabel = Instance.new("TextLabel")
-websiteLabel.Name = "WebsiteLabel"
-websiteLabel.Parent = titleBar
-local websiteLabelWidth = 160 -- Approximate width for the text
-websiteLabel.Size = UDim2.new(0, websiteLabelWidth, 0, 12) -- Small height for the text
-websiteLabel.Position = UDim2.new(1, -(logoSize + titleBarPadding + websiteLabelWidth + titleBarPadding), 0.5, -6) -- Positioned left of logoRight
-websiteLabel.Text = "iishong0w0.github.io/niggalose"
-websiteLabel.Font = Enum.Font.SourceSansLight -- Or Gotham if preferred and available
-websiteLabel.TextSize = 10
-websiteLabel.TextColor3 = theme.TextSecondary
-websiteLabel.TextXAlignment = Enum.TextXAlignment.Right
-websiteLabel.BackgroundTransparency = 1
-
--- Main Title Label (Adjusted)
+websiteLabel.Name = "WebsiteLabel"; websiteLabel.Parent = titleBar; local websiteLabelWidth = 160
+websiteLabel.Size = UDim2.new(0, websiteLabelWidth, 0, 12); websiteLabel.Position = UDim2.new(1, -(logoSize + titleBarPadding + websiteLabelWidth + titleBarPadding), 0.5, -6)
+websiteLabel.Text = "iishong0w0.github.io/niggalose"; websiteLabel.Font = Enum.Font.SourceSansLight; websiteLabel.TextSize = 10; websiteLabel.TextColor3 = theme.TextSecondary
+websiteLabel.TextXAlignment = Enum.TextXAlignment.Right; websiteLabel.BackgroundTransparency = 1
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"; titleLabel.Parent = titleBar; titleLabel.Text = "niggaLOSE+ v6.0S"
-local titleLabelXOffset = titleBarPadding + logoSize + titleBarPadding
-local titleLabelWidthReduction = titleLabelXOffset + (websiteLabelWidth + titleBarPadding + logoSize + titleBarPadding)
-titleLabel.Position = UDim2.new(0, titleLabelXOffset, 0, 0)
-titleLabel.Size = UDim2.new(1, -titleLabelWidthReduction, 1, 0)
-titleLabel.TextColor3 = theme.TextPrimary; titleLabel.Font = Enum.Font.GothamSemibold
-titleLabel.TextSize = 16; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
--- END OF LOGO AND WEBSITE TEXT INTEGRATION
+local titleLabelXOffset = titleBarPadding + logoSize + titleBarPadding; local titleLabelWidthReduction = titleLabelXOffset + (websiteLabelWidth + titleBarPadding + logoSize + titleBarPadding)
+titleLabel.Position = UDim2.new(0, titleLabelXOffset, 0, 0); titleLabel.Size = UDim2.new(1, -titleLabelWidthReduction, 1, 0)
+titleLabel.TextColor3 = theme.TextPrimary; titleLabel.Font = Enum.Font.GothamSemibold; titleLabel.TextSize = 16; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local tabsFrame = Instance.new("Frame")
-tabsFrame.Name = "TabsFrame"; tabsFrame.Parent = mainFrame; tabsFrame.Size = UDim2.new(0, 120, 1, -30)
-tabsFrame.Position = UDim2.new(0, 0, 0, 30); tabsFrame.BackgroundColor3 = theme.LighterBackground
-tabsFrame.BorderSizePixel = 0
+tabsFrame.Name = "TabsFrame"; tabsFrame.Parent = mainFrame; tabsFrame.Size = UDim2.new(0, 120, 1, -30); tabsFrame.Position = UDim2.new(0, 0, 0, 30)
+tabsFrame.BackgroundColor3 = theme.LighterBackground; tabsFrame.BorderSizePixel = 0
 
 local contentArea = Instance.new("Frame")
-contentArea.Name = "ContentArea"; contentArea.Parent = mainFrame; contentArea.Size = UDim2.new(1, -120, 1, -30)
-contentArea.Position = UDim2.new(0, 120, 0, 30); contentArea.BackgroundColor3 = theme.Background
-contentArea.BorderSizePixel = 0
+contentArea.Name = "ContentArea"; contentArea.Parent = mainFrame; contentArea.Size = UDim2.new(1, -120, 1, -30); contentArea.Position = UDim2.new(0, 120, 0, 30)
+contentArea.BackgroundColor3 = theme.Background; contentArea.BorderSizePixel = 0
 
-local tabCategories = {"瞄準", "透視", "移動", "雜項", "設定"}
-local tabButtons = {}
-local contentFrames = {}
-local contentListFrames = {}
-local activeTab = nil
-
-local itemPadding = 8
-local itemHeight = 28
-local keyDisplayWidth = 60
-local changeButtonWidth = 45
+local tabCategories = {"瞄準", "透視", "移動", "雜項", "設定"}; local tabButtons = {}; local contentFrames = {}; local contentListFrames = {}; local activeTab = nil
+local itemPadding = 8; local itemHeight = 28; local keyDisplayWidth = 60; local changeButtonWidth = 45
 
 local function createContentFrame(categoryName)
     local scrollFrame = Instance.new("ScrollingFrame"); scrollFrame.Name = categoryName .. "Content"; scrollFrame.Parent = contentArea
-    scrollFrame.Size = UDim2.new(1, 0, 1, 0); scrollFrame.BackgroundTransparency = 1; scrollFrame.BorderSizePixel = 0
-    scrollFrame.Visible = false; scrollFrame.ScrollBarThickness = 6; scrollFrame.ScrollBarImageColor3 = theme.ElementBackground
-    scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+    scrollFrame.Size = UDim2.new(1, 0, 1, 0); scrollFrame.BackgroundTransparency = 1; scrollFrame.BorderSizePixel = 0; scrollFrame.Visible = false; scrollFrame.ScrollBarThickness = 6
+    scrollFrame.ScrollBarImageColor3 = theme.ElementBackground; scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
     local listContentFrame = Instance.new("Frame"); listContentFrame.Name = "ListContent"; listContentFrame.Parent = scrollFrame
-    listContentFrame.Size = UDim2.new(1, 0, 0, 0); listContentFrame.AutomaticSize = Enum.AutomaticSize.Y
-    listContentFrame.BackgroundTransparency = 1
-    local listLayout = Instance.new("UIListLayout"); listLayout.Parent = listContentFrame; listLayout.Padding = UDim.new(0, itemPadding)
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder; listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    local paddingInstance = Instance.new("UIPadding"); paddingInstance.Parent = listContentFrame
-    paddingInstance.PaddingTop = UDim.new(0, 10); paddingInstance.PaddingLeft = UDim.new(0, 15)
-    paddingInstance.PaddingRight = UDim.new(0, 15); paddingInstance.PaddingBottom = UDim.new(0, 10)
+    listContentFrame.Size = UDim2.new(1, 0, 0, 0); listContentFrame.AutomaticSize = Enum.AutomaticSize.Y; listContentFrame.BackgroundTransparency = 1
+    local listLayout = Instance.new("UIListLayout"); listLayout.Parent = listContentFrame; listLayout.Padding = UDim.new(0, itemPadding); listLayout.SortOrder = Enum.SortOrder.LayoutOrder; listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local paddingInstance = Instance.new("UIPadding"); paddingInstance.Parent = listContentFrame; paddingInstance.PaddingTop = UDim.new(0, 10); paddingInstance.PaddingLeft = UDim.new(0, 15); paddingInstance.PaddingRight = UDim.new(0, 15); paddingInstance.PaddingBottom = UDim.new(0, 10)
     return scrollFrame, listContentFrame
 end
 
 for i, categoryName in ipairs(tabCategories) do
-    local tabButton = Instance.new("TextButton"); tabButton.Name = categoryName .. "Tab"; tabButton.Parent = tabsFrame
-    tabButton.Size = UDim2.new(1, -10, 0, 35); tabButton.Position = UDim2.new(0, 5, 0, 5 + (i - 1) * (35 + 5))
-    tabButton.Text = categoryName; tabButton.Font = Enum.Font.Gotham; tabButton.TextSize = 15
-    tabButton.TextColor3 = theme.TextSecondary; tabButton.BackgroundColor3 = theme.ElementBackground
-    tabButton.BorderSizePixel = 1; tabButton.BorderColor3 = theme.Border
-    tabButtons[categoryName] = tabButton
-    local scrollContainerFrame, actualContentListFrame = createContentFrame(categoryName)
-    contentFrames[categoryName] = scrollContainerFrame
-    contentListFrames[categoryName] = actualContentListFrame
+    local tabButton = Instance.new("TextButton"); tabButton.Name = categoryName .. "Tab"; tabButton.Parent = tabsFrame; tabButton.Size = UDim2.new(1, -10, 0, 35); tabButton.Position = UDim2.new(0, 5, 0, 5 + (i - 1) * (35 + 5))
+    tabButton.Text = categoryName; tabButton.Font = Enum.Font.Gotham; tabButton.TextSize = 15; tabButton.TextColor3 = theme.TextSecondary; tabButton.BackgroundColor3 = theme.ElementBackground; tabButton.BorderSizePixel = 1; tabButton.BorderColor3 = theme.Border
+    tabButtons[categoryName] = tabButton; local scrollContainerFrame, actualContentListFrame = createContentFrame(categoryName); contentFrames[categoryName] = scrollContainerFrame; contentListFrames[categoryName] = actualContentListFrame
     tabButton.MouseButton1Click:Connect(function()
-        if activeTab and contentFrames[activeTab] then
-            tabButtons[activeTab].TextColor3 = theme.TextSecondary; tabButtons[activeTab].BackgroundColor3 = theme.ElementBackground
-            contentFrames[activeTab].Visible = false
-        end
-        activeTab = categoryName
-        tabButton.TextColor3 = theme.Accent; tabButton.BackgroundColor3 = theme.Background
-        if contentFrames[categoryName] then contentFrames[categoryName].Visible = true end
+        if activeTab and contentFrames[activeTab] then tabButtons[activeTab].TextColor3 = theme.TextSecondary; tabButtons[activeTab].BackgroundColor3 = theme.ElementBackground; contentFrames[activeTab].Visible = false end
+        activeTab = categoryName; tabButton.TextColor3 = theme.Accent; tabButton.BackgroundColor3 = theme.Background; if contentFrames[categoryName] then contentFrames[categoryName].Visible = true end
     end)
 end
 
+-- Forward Declaration for Hitmarker Label access in Slider
+local hitmarkerLabel
+
 local function populateFeatureUI(config, parentFrame)
-    if config.currentKey and config.id ~= "gui_toggle" and config.id ~= "active_features_gui_toggle" and config.id ~= "aimbot_module" and config.id ~= "esp_module" then
-        local itemFrame = Instance.new("Frame"); itemFrame.Name = config.id .. "ItemFrame"; itemFrame.Parent = parentFrame
-        itemFrame.Size = UDim2.new(1, 0, 0, itemHeight); itemFrame.BackgroundTransparency = 1
-        itemFrame.LayoutOrder = #parentFrame:GetChildren() + 1
-
-        local nameLabel = Instance.new("TextLabel"); nameLabel.Name = config.id .. "NameLabel"; nameLabel.Parent = itemFrame
-        nameLabel.Size = UDim2.new(1, - (keyDisplayWidth + changeButtonWidth + itemPadding * 2), 1, 0)
-        nameLabel.Position = UDim2.new(0,0,0,0); nameLabel.Text = config.displayName; nameLabel.Font = Enum.Font.SourceSans
-        nameLabel.TextSize = 14; nameLabel.TextColor3 = theme.TextPrimary; nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        config.ui.nameLabel = nameLabel
-
-        local keyDisplay = Instance.new("TextLabel"); keyDisplay.Name = config.id .. "KeyDisplay"; keyDisplay.Parent = itemFrame
-        keyDisplay.Size = UDim2.new(0, keyDisplayWidth, 1, 0); keyDisplay.Position = UDim2.new(1, -(keyDisplayWidth + changeButtonWidth + itemPadding), 0, 0)
-        keyDisplay.BackgroundColor3 = theme.ElementBackground; keyDisplay.BorderColor3 = theme.Border; keyDisplay.BorderSizePixel = 1
-        keyDisplay.TextColor3 = theme.KeybindText; keyDisplay.Font = Enum.Font.SourceSansSemibold; keyDisplay.TextSize = 13
-        keyDisplay.Text = getKeyName(config.currentKey); keyDisplay.TextXAlignment = Enum.TextXAlignment.Center
-        config.ui.keyDisplayLabel = keyDisplay; updateFeatureKeyDisplay(config)
-
-        local changeButton = Instance.new("TextButton"); changeButton.Name = config.id .. "ChangeKeyButton"; changeButton.Parent = itemFrame
-        changeButton.Size = UDim2.new(0, changeButtonWidth, 1, 0); changeButton.Position = UDim2.new(1, -changeButtonWidth, 0, 0)
-        changeButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80); changeButton.BorderSizePixel = 1; changeButton.BorderColor3 = theme.Border
-        changeButton.TextColor3 = theme.TextPrimary; changeButton.Font = Enum.Font.SourceSans; changeButton.TextSize = 14; changeButton.Text = "綁定"
-        config.ui.changeKeyButton = changeButton
+    if config.currentKey and config.id ~= "gui_toggle" and config.id ~= "active_features_gui_toggle" and config.id ~= "aimbot_module" and config.id ~= "esp_module" and config.id ~= "triggerbot_module" then
+        local itemFrame = Instance.new("Frame"); itemFrame.Name = config.id .. "ItemFrame"; itemFrame.Parent = parentFrame; itemFrame.Size = UDim2.new(1, 0, 0, itemHeight); itemFrame.BackgroundTransparency = 1; itemFrame.LayoutOrder = #parentFrame:GetChildren() + 1
+        local nameLabel = Instance.new("TextLabel"); nameLabel.Name = config.id .. "NameLabel"; nameLabel.Parent = itemFrame; nameLabel.Size = UDim2.new(1, - (keyDisplayWidth + changeButtonWidth + itemPadding * 2), 1, 0); nameLabel.Position = UDim2.new(0,0,0,0); nameLabel.Text = config.displayName; nameLabel.Font = Enum.Font.SourceSans; nameLabel.TextSize = 14; nameLabel.TextColor3 = theme.TextPrimary; nameLabel.TextXAlignment = Enum.TextXAlignment.Left; config.ui.nameLabel = nameLabel
+        local keyDisplay = Instance.new("TextLabel"); keyDisplay.Name = config.id .. "KeyDisplay"; keyDisplay.Parent = itemFrame; keyDisplay.Size = UDim2.new(0, keyDisplayWidth, 1, 0); keyDisplay.Position = UDim2.new(1, -(keyDisplayWidth + changeButtonWidth + itemPadding), 0, 0); keyDisplay.BackgroundColor3 = theme.ElementBackground; keyDisplay.BorderColor3 = theme.Border; keyDisplay.BorderSizePixel = 1; keyDisplay.TextColor3 = theme.KeybindText; keyDisplay.Font = Enum.Font.SourceSansSemibold; keyDisplay.TextSize = 13; keyDisplay.Text = getKeyName(config.currentKey); keyDisplay.TextXAlignment = Enum.TextXAlignment.Center; config.ui.keyDisplayLabel = keyDisplay; updateFeatureKeyDisplay(config)
+        local changeButton = Instance.new("TextButton"); changeButton.Name = config.id .. "ChangeKeyButton"; changeButton.Parent = itemFrame; changeButton.Size = UDim2.new(0, changeButtonWidth, 1, 0); changeButton.Position = UDim2.new(1, -changeButtonWidth, 0, 0); changeButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80); changeButton.BorderSizePixel = 1; changeButton.BorderColor3 = theme.Border; changeButton.TextColor3 = theme.TextPrimary; changeButton.Font = Enum.Font.SourceSans; changeButton.TextSize = 14; changeButton.Text = "綁定"; config.ui.changeKeyButton = changeButton
         changeButton.MouseButton1Click:Connect(function()
             if currentlyBindingFeature then local oC = featuresConfig[currentlyBindingFeature]; if oC and oC.ui.changeKeyButton then oC.ui.changeKeyButton.Text = "綁定"; oC.ui.changeKeyButton.BackgroundColor3 = Color3.fromRGB(60,60,80) end end
             currentlyBindingFeature = config.id; changeButton.Text = "按..."; changeButton.BackgroundColor3 = theme.Accent
         end)
     end
-
-    if config.isEnabled ~= nil then -- This implies it's a toggleable feature
-        local toggleButton = Instance.new("TextButton"); toggleButton.Name = config.id .. "ToggleButton"; toggleButton.Parent = parentFrame
-        toggleButton.Size = UDim2.new(1, 0, 0, itemHeight); toggleButton.BackgroundColor3 = theme.ElementBackground
-        toggleButton.BorderSizePixel = 1; toggleButton.BorderColor3 = theme.Border; toggleButton.Font = Enum.Font.SourceSansSemibold
-        toggleButton.TextSize = 14; toggleButton.LayoutOrder = #parentFrame:GetChildren() + 1
-        config.ui.toggleButton = toggleButton; updateFeatureToggleButton(config)
-        toggleButton.MouseButton1Click:Connect(function()
-            config.isEnabled = not config.isEnabled; updateFeatureToggleButton(config)
-            if config.onToggle then pcall(config.onToggle, config, config.isEnabled) end
-        end)
+    if config.isEnabled ~= nil then
+        local toggleButton = Instance.new("TextButton"); toggleButton.Name = config.id .. "ToggleButton"; toggleButton.Parent = parentFrame; toggleButton.Size = UDim2.new(1, 0, 0, itemHeight); toggleButton.BackgroundColor3 = theme.ElementBackground; toggleButton.BorderSizePixel = 1; toggleButton.BorderColor3 = theme.Border; toggleButton.Font = Enum.Font.SourceSansSemibold; toggleButton.TextSize = 14; toggleButton.LayoutOrder = #parentFrame:GetChildren() + 1; config.ui.toggleButton = toggleButton; updateFeatureToggleButton(config)
+        toggleButton.MouseButton1Click:Connect(function() config.isEnabled = not config.isEnabled; updateFeatureToggleButton(config); if config.onToggle then pcall(config.onToggle, config, config.isEnabled) end end)
     end
-
-    local sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText
-    if config.id == "flight_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_FLIGHT_SPEED, MAX_FLIGHT_SPEED, config.currentSpeed, "FlightSpeed", "飛行速度:"
-    elseif config.id == "bhop_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_AIR_STRAFE_FORCE, MAX_AIR_STRAFE_FORCE, config.currentAirStrafeForce, "BhopForce", "連跳力度:"
-    elseif config.id == "third_person" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_THIRD_PERSON_DISTANCE_Z, MAX_THIRD_PERSON_DISTANCE_Z, config.currentDistanceZ, "TPDistance", "第三人稱距離:"
-    elseif config.id == "teleport_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_TELEPORT_BEHIND_DISTANCE, MAX_TELEPORT_BEHIND_DISTANCE, config.currentTeleportDistance, "TPBehindDist", "背後距離:"
-    elseif config.id == "anti_aim" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText = MIN_ANTI_AIM_RADIUS, MAX_ANTI_AIM_RADIUS, config.currentAntiAimRadius, "AARadius", "隨機半徑:"
+    local sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey
+    if config.id == "flight_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_FLIGHT_SPEED, MAX_FLIGHT_SPEED, config.currentSpeed, "FlightSpeed", "飛行速度:", "currentSpeed"
+    elseif config.id == "bhop_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_AIR_STRAFE_FORCE, MAX_AIR_STRAFE_FORCE, config.currentAirStrafeForce, "BhopForce", "連跳力度:", "currentAirStrafeForce"
+    elseif config.id == "third_person" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_THIRD_PERSON_DISTANCE_Z, MAX_THIRD_PERSON_DISTANCE_Z, config.currentDistanceZ, "TPDistance", "第三人稱距離:", "currentDistanceZ"
+    elseif config.id == "teleport_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_TELEPORT_BEHIND_DISTANCE, MAX_TELEPORT_BEHIND_DISTANCE, config.currentTeleportDistance, "TPBehindDist", "背後距離:", "currentTeleportDistance"
+    elseif config.id == "anti_aim" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_ANTI_AIM_RADIUS, MAX_ANTI_AIM_RADIUS, config.currentAntiAimRadius, "AARadius", "隨機半徑:", "currentAntiAimRadius"
+    elseif config.id == "triggerbot_module" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_TRIGGERBOT_DELAY_MS, MAX_TRIGGERBOT_DELAY_MS, config.currentDelayMs, "TriggerDelay", "開槍延遲 (ms):", "currentDelayMs"
+    elseif config.id == "hitmarker" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_HITMARKER_SIZE, MAX_HITMARKER_SIZE, config.currentHitmarkerSize, "HitmarkerSize", "命中標記大小:", "currentHitmarkerSize" -- HITMARKER SLIDER
     end
-
     if sliderMin then
-        local sliderFrame = Instance.new("Frame"); sliderFrame.Name = sliderIdPrefix .. "SliderFrame"; sliderFrame.Parent = parentFrame
-        sliderFrame.Size = UDim2.new(1, 0, 0, itemHeight + 15); sliderFrame.BackgroundTransparency = 1
-        sliderFrame.LayoutOrder = #parentFrame:GetChildren() + 1
-        local label = Instance.new("TextLabel"); label.Parent = sliderFrame; label.Size = UDim2.new(1,0,0,15); label.Position = UDim2.new(0,0,0,0)
-        label.Text = sliderLabelText; label.Font = Enum.Font.SourceSans; label.TextSize = 13; label.TextColor3 = theme.TextSecondary
-        label.TextXAlignment = Enum.TextXAlignment.Left; label.BackgroundTransparency = 1
-        local sliderTrack = Instance.new("Frame"); sliderTrack.Name = sliderIdPrefix .. "SliderTrack"; sliderTrack.Parent = sliderFrame
-        local valueDisplayWidth = 45; local sidePadding = 5
-        local trackWidth = parentFrame.AbsoluteSize.X - valueDisplayWidth - sidePadding - 30 -- 30 for parent UIPadding L+R
-        if trackWidth <= 50 then trackWidth = math.max(50, parentFrame.AbsoluteSize.X * 0.6) end -- Fallback if too small
-        sliderTrack.Size = UDim2.new(0, trackWidth, 0, 8); sliderTrack.Position = UDim2.new(0, 0, 0, 15 + (itemHeight-8)/2)
-        sliderTrack.BackgroundColor3 = theme.ElementBackground; sliderTrack.BorderSizePixel = 1; sliderTrack.BorderColor3 = theme.Border
+        local sliderFrame = Instance.new("Frame"); sliderFrame.Name = sliderIdPrefix .. "SliderFrame"; sliderFrame.Parent = parentFrame; sliderFrame.Size = UDim2.new(1, 0, 0, itemHeight + 15); sliderFrame.BackgroundTransparency = 1; sliderFrame.LayoutOrder = #parentFrame:GetChildren() + 1
+        local label = Instance.new("TextLabel"); label.Parent = sliderFrame; label.Size = UDim2.new(1,0,0,15); label.Position = UDim2.new(0,0,0,0); label.Text = sliderLabelText; label.Font = Enum.Font.SourceSans; label.TextSize = 13; label.TextColor3 = theme.TextSecondary; label.TextXAlignment = Enum.TextXAlignment.Left; label.BackgroundTransparency = 1
+        local sliderTrack = Instance.new("Frame"); sliderTrack.Name = sliderIdPrefix .. "SliderTrack"; sliderTrack.Parent = sliderFrame; local valueDisplayWidth = 45; local sidePadding = 5; local trackWidth = parentFrame.AbsoluteSize.X - valueDisplayWidth - sidePadding - 30; if trackWidth <= 50 then trackWidth = math.max(50, parentFrame.AbsoluteSize.X * 0.6) end; sliderTrack.Size = UDim2.new(0, trackWidth, 0, 8); sliderTrack.Position = UDim2.new(0, 0, 0, 15 + (itemHeight-8)/2); sliderTrack.BackgroundColor3 = theme.ElementBackground; sliderTrack.BorderSizePixel = 1; sliderTrack.BorderColor3 = theme.Border
         local cr = Instance.new("UICorner"); cr.Parent = sliderTrack; cr.CornerRadius = UDim.new(0,4); config.ui[sliderIdPrefix .. "SliderTrack"] = sliderTrack
-        local sliderThumb = Instance.new("Frame"); sliderThumb.Name = sliderIdPrefix .. "SliderThumb"; sliderThumb.Parent = sliderTrack
-        sliderThumb.Size = UDim2.new(0, 10, 1, 4); sliderThumb.Position = UDim2.new(0,0,0,-2); sliderThumb.BackgroundColor3 = theme.Accent
-        sliderThumb.BorderSizePixel = 0; local tc = Instance.new("UICorner"); tc.Parent = sliderThumb; tc.CornerRadius = UDim.new(0,3); config.ui[sliderIdPrefix .. "SliderThumb"] = sliderThumb
-        local valueDisplay = Instance.new("TextLabel"); valueDisplay.Name = sliderIdPrefix .. "ValueDisplay"; valueDisplay.Parent = sliderFrame
-        valueDisplay.Size = UDim2.new(0, valueDisplayWidth, 0, itemHeight); valueDisplay.Position = UDim2.new(0, trackWidth + sidePadding, 0, 15)
-        valueDisplay.Font = Enum.Font.SourceSansSemibold; valueDisplay.TextSize = 13; valueDisplay.TextColor3 = theme.TextPrimary
-        valueDisplay.TextXAlignment = Enum.TextXAlignment.Right; valueDisplay.BackgroundTransparency = 1; config.ui[sliderIdPrefix .. "ValueDisplay"] = valueDisplay
-        
-        local function updateSliderDisplay(currentVal) 
-            local p = math.clamp((currentVal - sliderMin) / (sliderMax - sliderMin), 0, 1)
+        local sliderThumb = Instance.new("Frame"); sliderThumb.Name = sliderIdPrefix .. "SliderThumb"; sliderThumb.Parent = sliderTrack; sliderThumb.Size = UDim2.new(0, 10, 1, 4); sliderThumb.Position = UDim2.new(0,0,0,-2); sliderThumb.BackgroundColor3 = theme.Accent; sliderThumb.BorderSizePixel = 0; local tc = Instance.new("UICorner"); tc.Parent = sliderThumb; tc.CornerRadius = UDim.new(0,3); config.ui[sliderIdPrefix .. "SliderThumb"] = sliderThumb
+        local valueDisplay = Instance.new("TextLabel"); valueDisplay.Name = sliderIdPrefix .. "ValueDisplay"; valueDisplay.Parent = sliderFrame; valueDisplay.Size = UDim2.new(0, valueDisplayWidth, 0, itemHeight); valueDisplay.Position = UDim2.new(0, trackWidth + sidePadding, 0, 15); valueDisplay.Font = Enum.Font.SourceSansSemibold; valueDisplay.TextSize = 13; valueDisplay.TextColor3 = theme.TextPrimary; valueDisplay.TextXAlignment = Enum.TextXAlignment.Right; valueDisplay.BackgroundTransparency = 1; config.ui[sliderIdPrefix .. "ValueDisplay"] = valueDisplay
+        local function updateSliderDisplay(currentVal)
+            local p = 0; if sliderMax > sliderMin then p = math.clamp((currentVal - sliderMin) / (sliderMax - sliderMin), 0, 1) end
             sliderThumb.Position = UDim2.new(p, -sliderThumb.AbsoluteSize.X * p, 0, -2)
-            if config.id == "third_person" or config.id == "teleport_mode" or config.id == "anti_aim" then 
-                valueDisplay.Text = string.format("%.1f", currentVal) -- Use 1 decimal for distances/radii
-            else 
-                valueDisplay.Text = tostring(math.floor(currentVal)) 
-            end 
-        end
-        updateSliderDisplay(sliderCurrent)
-        
-        local draggingSlider = false
-        sliderThumb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; mainFrame.Draggable = false end end)
+            if config.id == "third_person" or config.id == "teleport_mode" or config.id == "anti_aim" then valueDisplay.Text = string.format("%.1f", currentVal) else valueDisplay.Text = tostring(math.floor(currentVal)) end
+        end; updateSliderDisplay(sliderCurrent)
+        local draggingSlider = false; sliderThumb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; mainFrame.Draggable = false end end)
         UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then if draggingSlider then draggingSlider = false; mainFrame.Draggable = true end end end)
         UserInputService.InputChanged:Connect(function(i)
             if draggingSlider and i.UserInputType == Enum.UserInputType.MouseMovement then
-                local mX = UserInputService:GetMouseLocation().X; local tSX = sliderTrack.AbsolutePosition.X; local tAW = sliderTrack.AbsoluteSize.X
-                if tAW == 0 then return end; local rX = mX - tSX; local p = math.clamp(rX / tAW, 0, 1)
-                local nV = sliderMin + (sliderMax - sliderMin) * p
-                if config.id == "flight_mode" then config.currentSpeed = nV 
-                elseif config.id == "bhop_mode" then config.currentAirStrafeForce = nV 
-                elseif config.id == "third_person" then config.currentDistanceZ = nV 
-                elseif config.id == "teleport_mode" then config.currentTeleportDistance = nV
-                elseif config.id == "anti_aim" then config.currentAntiAimRadius = nV
+                local mX = UserInputService:GetMouseLocation().X; local tSX = sliderTrack.AbsolutePosition.X; local tAW = sliderTrack.AbsoluteSize.X; if tAW == 0 then return end; local rX = mX - tSX; local p = math.clamp(rX / tAW, 0, 1); local nV = sliderMin + (sliderMax - sliderMin) * p
+                if configValueKey then config[configValueKey] = nV end; updateSliderDisplay(nV)
+                -- Special case for Hitmarker: Update label size immediately
+                if config.id == "hitmarker" and hitmarkerLabel then
+                    local newSize = math.floor(nV)
+                    hitmarkerLabel.TextSize = newSize
+                    hitmarkerLabel.Size = UDim2.fromOffset(newSize, newSize)
                 end
-                updateSliderDisplay(nV)
             end
         end)
     end
 end
-
-for id, config in pairs(featuresConfig) do
-    local category = config.category or "雜項"
-    if contentListFrames[category] then populateFeatureUI(config, contentListFrames[category])
-    else warn("DEBUG: No content list frame for category:", category, "for feature:", id) end
-end
-
-if #tabCategories > 0 then
-    local firstCategory = tabCategories[1]
-    if tabButtons[firstCategory] and contentFrames[firstCategory] then
-        activeTab = firstCategory; tabButtons[firstCategory].TextColor3 = theme.Accent
-        tabButtons[firstCategory].BackgroundColor3 = theme.Background; contentFrames[firstCategory].Visible = true
-    end
-end
-print("DEBUG: New Control Panel GUI v6 created.")
-
--- ========== Active Features Display GUI ==========
-print("DEBUG: Creating Active Features Display GUI...")
-local activeFeaturesScreenGui = Instance.new("ScreenGui")
-activeFeaturesScreenGui.Name = "SolaraPanel_v6_ActiveFeatures"
-activeFeaturesScreenGui.ResetOnSpawn = false
-activeFeaturesScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-activeFeaturesScreenGui.DisplayOrder = 100 -- Lower than main panel's default, if needed
-activeFeaturesScreenGui.Parent = PlayerGui
-
-local activeFeaturesFrame = Instance.new("Frame")
-activeFeaturesFrame.Name = "ActiveFeaturesFrame"
-activeFeaturesFrame.Size = UDim2.new(0, 200, 0, 30) -- Initial small size, will auto-size Y
-activeFeaturesFrame.Position = UDim2.new(0, 10, 0, mainFrame.Size.Y.Offset + 20 + 10) -- Position below main panel
-activeFeaturesFrame.BackgroundColor3 = theme.LighterBackground
-activeFeaturesFrame.BorderColor3 = theme.Border
-activeFeaturesFrame.BorderSizePixel = 1
-activeFeaturesFrame.Active = true
-activeFeaturesFrame.Draggable = true
-activeFeaturesFrame.Parent = activeFeaturesScreenGui
-activeFeaturesFrame.AutomaticSize = Enum.AutomaticSize.Y -- Auto size based on content
-activeFeaturesFrame.Visible = activeFeaturesGuiVisible
-
-local activeFeaturesTitle = Instance.new("TextLabel")
-activeFeaturesTitle.Name = "ActiveTitle"
-activeFeaturesTitle.Parent = activeFeaturesFrame
-activeFeaturesTitle.Size = UDim2.new(1, 0, 0, 20)
-activeFeaturesTitle.BackgroundColor3 = theme.ElementBackground
-activeFeaturesTitle.Text = "啟用中功能"
-activeFeaturesTitle.Font = Enum.Font.SourceSansSemibold
-activeFeaturesTitle.TextSize = 13
-activeFeaturesTitle.TextColor3 = theme.TextPrimary
-activeFeaturesTitle.TextXAlignment = Enum.TextXAlignment.Center
-
-local activeFeaturesListLayout = Instance.new("UIListLayout")
-activeFeaturesListLayout.Parent = activeFeaturesFrame
-activeFeaturesListLayout.Padding = UDim.new(0, 3)
-activeFeaturesListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-activeFeaturesListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-activeFeaturesListLayout.FillDirection = Enum.FillDirection.Vertical
-
-local activeFeaturesPadding = Instance.new("UIPadding")
-activeFeaturesPadding.Parent = activeFeaturesFrame
-activeFeaturesPadding.PaddingTop = UDim.new(0, 20 + 3) -- Space for title + padding
-activeFeaturesPadding.PaddingBottom = UDim.new(0, 5)
-activeFeaturesPadding.PaddingLeft = UDim.new(0, 5)
-activeFeaturesPadding.PaddingRight = UDim.new(0, 5)
-
-updateActiveFeaturesDisplay = function()
-    if not activeFeaturesFrame or not activeFeaturesFrame.Parent then return end
-    for _, child in ipairs(activeFeaturesFrame:GetChildren()) do
-        if child:IsA("TextLabel") and child ~= activeFeaturesTitle then
-            child:Destroy()
-        end
-    end
-
-    local anyFeatureActive = false
-    for id, config in pairs(featuresConfig) do
-        if config.isEnabled and config.showInActiveList then
-            local featureLabel = Instance.new("TextLabel")
-            featureLabel.Name = id .. "ActiveLabel"
-            featureLabel.Parent = activeFeaturesFrame
-            featureLabel.Size = UDim2.new(1, -10, 0, 18) -- Full width minus padding, fixed height
-            featureLabel.Text = "- " .. config.displayName
-            featureLabel.Font = Enum.Font.SourceSans
-            featureLabel.TextSize = 12
-            featureLabel.TextColor3 = theme.ActiveListText
-            featureLabel.TextXAlignment = Enum.TextXAlignment.Left
-            featureLabel.BackgroundTransparency = 1
-            featureLabel.LayoutOrder = #activeFeaturesFrame:GetChildren()
-            anyFeatureActive = true
-        end
-    end
-    activeFeaturesFrame.Visible = activeFeaturesGuiVisible and anyFeatureActive -- Only show if enabled AND features are active
-end
-print("DEBUG: Active Features Display GUI created.")
-
 
 -- ========== GUI Creation (Visual Cue Dot) ==========
 print("DEBUG: Creating Visual Cue GUI...")
@@ -603,107 +437,102 @@ local cueDot=Instance.new("Frame"); cueDot.Name="CueDot"; cueDot.Size=UDim2.from
 local dotCorner=Instance.new("UICorner"); dotCorner.CornerRadius=UDim.new(0.5,0); dotCorner.Parent=cueDot
 print("DEBUG: Visual Cue GUI created.")
 
-setFlightPhysics = function(enabled) local localChar = LocalPlayer.Character; local hrp = localChar and localChar:FindFirstChild("HumanoidRootPart"); local humanoid_flight = localChar and localChar:FindFirstChildOfClass("Humanoid"); if not hrp or not humanoid_flight then return end; if enabled then if not bodyGyro or not bodyGyro.Parent then if bodyGyro then bodyGyro:Destroy() end; bodyGyro = Instance.new("BodyGyro"); bodyGyro.P = 5000; bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9); bodyGyro.CFrame = hrp.CFrame; bodyGyro.Parent = hrp; end; if not bodyVelocity or not bodyVelocity.Parent then if bodyVelocity then bodyVelocity:Destroy() end; bodyVelocity = Instance.new("BodyVelocity"); bodyVelocity.P = 1250; bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9); bodyVelocity.Velocity = Vector3.new(0,0,0); bodyVelocity.Parent = hrp; end; humanoid_flight.AutoRotate = false; else if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil; end; if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil; end; humanoid_flight.AutoRotate = true; end end
+-- ========== GUI Creation (Hitmarker) ==========
+print("DEBUG: Creating Hitmarker GUI...")
+local hitmarkerScreenGui = Instance.new("ScreenGui")
+hitmarkerScreenGui.Name = "SolaraHitmarkerDisplay"
+hitmarkerScreenGui.ResetOnSpawn = false
+hitmarkerScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hitmarkerScreenGui.IgnoreGuiInset = true
+hitmarkerScreenGui.DisplayOrder = 2000 -- Should be high
+hitmarkerScreenGui.Parent = PlayerGui
+
+hitmarkerLabel = Instance.new("TextLabel") -- Assign to the forward-declared variable
+hitmarkerLabel.Name = "HitmarkerX"
+hitmarkerLabel.Size = UDim2.fromOffset(featuresConfig.hitmarker.currentHitmarkerSize, featuresConfig.hitmarker.currentHitmarkerSize)
+hitmarkerLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+hitmarkerLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+hitmarkerLabel.BackgroundTransparency = 1
+hitmarkerLabel.Font = Enum.Font.SourceSansBold
+hitmarkerLabel.Text = HITMARKER_TEXT
+hitmarkerLabel.TextColor3 = HITMARKER_COLOR
+hitmarkerLabel.TextSize = featuresConfig.hitmarker.currentHitmarkerSize
+hitmarkerLabel.TextStrokeColor3 = HITMARKER_OUTLINE_COLOR
+hitmarkerLabel.TextStrokeTransparency = 0
+hitmarkerLabel.Visible = false -- Start hidden
+hitmarkerLabel.Parent = hitmarkerScreenGui
+print("DEBUG: Hitmarker GUI created.")
+
+
+-- Populate Main UI Tabs after all base UI is ready
+for id, config in pairs(featuresConfig) do
+    local category = config.category or "雜項"; if contentListFrames[category] then populateFeatureUI(config, contentListFrames[category]) else warn("DEBUG: No content list frame for category:", category, "for feature:", id) end
+end
+
+if #tabCategories > 0 then
+    local firstCategory = tabCategories[1]; if tabButtons[firstCategory] and contentFrames[firstCategory] then activeTab = firstCategory; tabButtons[firstCategory].TextColor3 = theme.Accent; tabButtons[firstCategory].BackgroundColor3 = theme.Background; contentFrames[firstCategory].Visible = true end
+end
+print("DEBUG: Main GUI content populated.")
+
+-- ========== Active Features Display GUI ==========
+print("DEBUG: Creating Active Features Display GUI...")
+local activeFeaturesScreenGui = Instance.new("ScreenGui")
+activeFeaturesScreenGui.Name = "SolaraPanel_v6_ActiveFeatures"; activeFeaturesScreenGui.ResetOnSpawn = false; activeFeaturesScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; activeFeaturesScreenGui.DisplayOrder = 100; activeFeaturesScreenGui.Parent = PlayerGui
+local activeFeaturesFrame = Instance.new("Frame")
+activeFeaturesFrame.Name = "ActiveFeaturesFrame"; activeFeaturesFrame.Size = UDim2.new(0, 200, 0, 30); activeFeaturesFrame.Position = UDim2.new(0, 10, 0, mainFrame.Size.Y.Offset + 20 + 10)
+activeFeaturesFrame.BackgroundColor3 = theme.LighterBackground; activeFeaturesFrame.BorderColor3 = theme.Border; activeFeaturesFrame.BorderSizePixel = 1; activeFeaturesFrame.Active = true; activeFeaturesFrame.Draggable = true; activeFeaturesFrame.Parent = activeFeaturesScreenGui
+activeFeaturesFrame.AutomaticSize = Enum.AutomaticSize.Y; activeFeaturesFrame.Visible = activeFeaturesGuiVisible
+local activeFeaturesTitle = Instance.new("TextLabel")
+activeFeaturesTitle.Name = "ActiveTitle"; activeFeaturesTitle.Parent = activeFeaturesFrame; activeFeaturesTitle.Size = UDim2.new(1, 0, 0, 20); activeFeaturesTitle.BackgroundColor3 = theme.ElementBackground; activeFeaturesTitle.Text = "啟用中功能"; activeFeaturesTitle.Font = Enum.Font.SourceSansSemibold; activeFeaturesTitle.TextSize = 13; activeFeaturesTitle.TextColor3 = theme.TextPrimary; activeFeaturesTitle.TextXAlignment = Enum.TextXAlignment.Center
+local activeFeaturesListLayout = Instance.new("UIListLayout")
+activeFeaturesListLayout.Parent = activeFeaturesFrame; activeFeaturesListLayout.Padding = UDim.new(0, 3); activeFeaturesListLayout.SortOrder = Enum.SortOrder.LayoutOrder; activeFeaturesListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; activeFeaturesListLayout.FillDirection = Enum.FillDirection.Vertical
+local activeFeaturesPadding = Instance.new("UIPadding")
+activeFeaturesPadding.Parent = activeFeaturesFrame; activeFeaturesPadding.PaddingTop = UDim.new(0, 20 + 3); activeFeaturesPadding.PaddingBottom = UDim.new(0, 5); activeFeaturesPadding.PaddingLeft = UDim.new(0, 5); activeFeaturesPadding.PaddingRight = UDim.new(0, 5)
+updateActiveFeaturesDisplay = function()
+    if not activeFeaturesFrame or not activeFeaturesFrame.Parent then return end
+    for _, child in ipairs(activeFeaturesFrame:GetChildren()) do if child:IsA("TextLabel") and child ~= activeFeaturesTitle then child:Destroy() end end
+    local anyFeatureActive = false
+    for id, config in pairs(featuresConfig) do
+        if config.isEnabled and config.showInActiveList then
+            local featureLabel = Instance.new("TextLabel"); featureLabel.Name = id .. "ActiveLabel"; featureLabel.Parent = activeFeaturesFrame; featureLabel.Size = UDim2.new(1, -10, 0, 18); featureLabel.Text = "- " .. config.displayName; featureLabel.Font = Enum.Font.SourceSans; featureLabel.TextSize = 12; featureLabel.TextColor3 = theme.ActiveListText; featureLabel.TextXAlignment = Enum.TextXAlignment.Left; featureLabel.BackgroundTransparency = 1; featureLabel.LayoutOrder = #activeFeaturesFrame:GetChildren(); anyFeatureActive = true
+        end
+    end; activeFeaturesFrame.Visible = activeFeaturesGuiVisible and anyFeatureActive
+end; print("DEBUG: Active Features Display GUI created.")
+
+-- Helper Functions (Existing + Hitmarker's findNearestEnemy)
+setFlightPhysics = function(enabled) local localChar=LocalPlayer.Character; local hrp=localChar and localChar:FindFirstChild("HumanoidRootPart"); local h=localChar and localChar:FindFirstChildOfClass("Humanoid"); if not hrp or not h then return end; if enabled then if not bodyGyro or not bodyGyro.Parent then if bodyGyro then bodyGyro:Destroy() end; bodyGyro=Instance.new("BodyGyro"); bodyGyro.P=5000; bodyGyro.MaxTorque=Vector3.new(9e9,9e9,9e9); bodyGyro.CFrame=hrp.CFrame; bodyGyro.Parent=hrp end; if not bodyVelocity or not bodyVelocity.Parent then if bodyVelocity then bodyVelocity:Destroy() end; bodyVelocity=Instance.new("BodyVelocity"); bodyVelocity.P=1250; bodyVelocity.MaxForce=Vector3.new(9e9,9e9,9e9); bodyVelocity.Velocity=Vector3.new(0,0,0); bodyVelocity.Parent=hrp end; h.AutoRotate=false else if bodyGyro then bodyGyro:Destroy(); bodyGyro=nil end; if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity=nil end; h.AutoRotate=true end end
 restoreCamera = function() Camera.CameraType = originalCameraType; pcall(function() Camera.Focus = originalCameraFocus end); lastThirdPersonPos = nil; end
-setNoclipState = function(enabled) local character = LocalPlayer.Character; if not character then return end; local humanoid_noclip = character:FindFirstChildOfClass("Humanoid"); if not humanoid_noclip then return end; if enabled then if humanoid_noclip:GetState() ~= Enum.HumanoidStateType.Physics then humanoid_noclip:ChangeState(Enum.HumanoidStateType.Physics) end; task.wait(); for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end else for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end; if humanoid_noclip:GetState() == Enum.HumanoidStateType.Physics then humanoid_noclip:ChangeState(Enum.HumanoidStateType.GettingUp) end end end
+setNoclipState = function(enabled) local c=LocalPlayer.Character; if not c then return end; local h=c:FindFirstChildOfClass("Humanoid"); if not h then return end; if enabled then if h:GetState()~=Enum.HumanoidStateType.Physics then h:ChangeState(Enum.HumanoidStateType.Physics) end; task.wait(); for _,p in ipairs(c:GetDescendants())do if p:IsA("BasePart")then p.CanCollide=false end end else for _,p in ipairs(c:GetDescendants())do if p:IsA("BasePart")then p.CanCollide=true end end; if h:GetState()==Enum.HumanoidStateType.Physics then h:ChangeState(Enum.HumanoidStateType.GettingUp)end end end
 destroyGhostModel = function(reason) if ghostModel then pcall(function() ghostModel:Destroy() end); ghostModel = nil end; cframeHistory = {}; lastAppliedDelayedCFrame = nil; end
-createOrUpdateGhostModel = function() local character = LocalPlayer.Character; if not character then destroyGhostModel("Char nil"); return false end; local charHRP = character:FindFirstChild("HumanoidRootPart"); if not charHRP then destroyGhostModel("HRP nil"); return false end; if not ghostModel or not ghostModel.Parent then if ghostModel then pcall(function() ghostModel:Destroy() end) end; ghostModel = Instance.new("Model"); ghostModel.Name = "LocalGhost_"..LocalPlayer.UserId; ghostModel.Archivable = false; local partsCloned = 0; local ghostHRPCreated = false; for _, part in ipairs(character:GetChildren()) do if part:IsA("BasePart") or part:IsA("MeshPart") then local ghostPart = part:Clone(); ghostPart.Name = "Ghost_"..part.Name; ghostPart.Anchored = true; ghostPart.CanCollide = false; ghostPart.CastShadow = false; pcall(function() ghostPart.Transparency = GHOST_TRANSPARENCY end); for _, child in ipairs(ghostPart:GetChildren()) do if child:IsA("Decal") or child:IsA("Texture") then child:Destroy() end end; ghostPart.Parent = ghostModel; partsCloned = partsCloned + 1; if part.Name == "HumanoidRootPart" then ghostModel.PrimaryPart = ghostPart; ghostHRPCreated = true end elseif part:IsA("Accessory") then local ghostAccessory = part:Clone(); ghostAccessory.Name = "Ghost_"..part.Name; if ghostAccessory:FindFirstChild("Handle") and ghostAccessory.Handle:IsA("BasePart") then local h = ghostAccessory.Handle; h.Anchored=true;h.CanCollide=false;pcall(function()h.Transparency=GHOST_TRANSPARENCY end) end; ghostAccessory.Parent = ghostModel; partsCloned = partsCloned + 1 end end; if partsCloned > 0 and ghostHRPCreated then ghostModel.Parent = Workspace else destroyGhostModel("Clone fail"); return false end end; if ghostModel and ghostModel.PrimaryPart then pcall(function() ghostModel:SetPrimaryPartCFrame(charHRP.CFrame) end) else destroyGhostModel("SetCF fail"); return false end; return true end
-local function updateFakeLagLogic() if not featuresConfig.fake_lag.isEnabled then if ghostModel then destroyGhostModel("FL off") end return end; local char=LocalPlayer.Character; local hrp_fakelag=char and char:FindFirstChild("HumanoidRootPart"); if not char or not hrp_fakelag then destroyGhostModel("No char/hrp FL"); return end; if hrp_fakelag.Anchored then hrp_fakelag.Anchored = false end; if not createOrUpdateGhostModel() then return end; local curCF=hrp_fakelag.CFrame; local curTime=tick(); table.insert(cframeHistory,{t=curTime,cf=curCF}); local oldestRec,rmIdx=nil,0; for i=1,#cframeHistory do local rec=cframeHistory[i]; if curTime-rec.t>=GHOST_DELAY_SECONDS then oldestRec=rec;rmIdx=i-1 else break end end; if rmIdx>0 then for i=1,rmIdx do table.remove(cframeHistory,1) end end; local targetCF=oldestRec and oldestRec.cf; if targetCF then if not lastAppliedDelayedCFrame or (targetCF.Position-lastAppliedDelayedCFrame.Position).Magnitude>0.01 or (curTime-lastRealCFrameAppliedTime>=MIN_REAL_CFRAME_UPDATE_INTERVAL) then if pcall(function()hrp_fakelag.CFrame=CFrame.new(targetCF.Position)*(hrp_fakelag.CFrame-hrp_fakelag.CFrame.Position)end)then lastRealCFrameAppliedTime=curTime;lastAppliedDelayedCFrame=targetCF end end else lastAppliedDelayedCFrame=nil end; if #cframeHistory>200 then table.remove(cframeHistory,1) end end
-onBhopJumpRequest = function() if not featuresConfig.bhop_mode.isEnabled then return end; local lc = LocalPlayer.Character; local h = lc and lc:FindFirstChildOfClass("Humanoid"); if not h then return end; if h:GetState() ~= Enum.HumanoidStateType.Jumping and h:GetState() ~= Enum.HumanoidStateType.Freefall and h.FloorMaterial ~= Enum.Material.Air then h.Jump = true; isBhopJumping = true; canBhopAirStrafe = true end end
-onBhopHumanoidStateChanged = function(o, n) if not featuresConfig.bhop_mode.isEnabled then return end; local lc = LocalPlayer.Character; local h = lc and lc:FindFirstChildOfClass("Humanoid"); if not h then return end; if n == Enum.HumanoidStateType.Landed then isBhopJumping = false; canBhopAirStrafe = false elseif n == Enum.HumanoidStateType.Jumping or n == Enum.HumanoidStateType.Freefall then isBhopJumping = true; canBhopAirStrafe = true end end
-connectBhopStateChanged = function() if bhopStateChangedConnection then return end; local c = LocalPlayer.Character; local h = c and c:FindFirstChildOfClass("Humanoid"); if h then bhopStateChangedConnection = h.StateChanged:Connect(onBhopHumanoidStateChanged); local cs = h:GetState(); if cs == Enum.HumanoidStateType.Jumping or cs == Enum.HumanoidStateType.Freefall then isBhopJumping=true;canBhopAirStrafe=true else isBhopJumping=false;canBhopAirStrafe=false end else warn("BHOP: Hum not found") end end
-disconnectBhopStateChanged = function() if bhopStateChangedConnection then bhopStateChangedConnection:Disconnect(); bhopStateChangedConnection = nil end; isBhopJumping = false; canBhopAirStrafe = false end
-createEspForPlayer = function(player) if not DrawingLib then return end; if espElements[player] then return end; local els={}; els.Box=DrawingLib.new("Quad"); els.Box.Color=ESP_BOX_COLOR; els.Box.Thickness=1; els.Box.Filled=false; els.Box.Visible=false; els.Name=DrawingLib.new("Text"); els.Name.Text=player.Name; els.Name.Color=ESP_TEXT_COLOR; els.Name.Size=ESP_TEXT_SIZE; els.Name.Center=true; els.Name.Outline=true; els.Name.Visible=false; els.Health=DrawingLib.new("Text"); els.Health.Text="100/100"; els.Health.Color=ESP_TEXT_COLOR; els.Health.Size=ESP_HEALTH_SIZE; els.Health.Center=true; els.Health.Outline=true; els.Health.Visible=false; espElements[player]=els; end
-removeEspForPlayer = function(player) if espElements[player] then local els=espElements[player]; if els.Box then els.Box:Remove() end; if els.Name then els.Name:Remove() end; if els.Health then els.Health:Remove() end; espElements[player]=nil end end
+createOrUpdateGhostModel = function() local c=LocalPlayer.Character; if not c then destroyGhostModel("Char nil"); return false end; local hrp=c:FindFirstChild("HumanoidRootPart"); if not hrp then destroyGhostModel("HRP nil"); return false end; if not ghostModel or not ghostModel.Parent then if ghostModel then pcall(function() ghostModel:Destroy() end) end; ghostModel=Instance.new("Model"); ghostModel.Name="LocalGhost_"..LocalPlayer.UserId; ghostModel.Archivable=false; local pc,ghc=0,false; for _,p in ipairs(c:GetChildren())do if p:IsA("BasePart")or p:IsA("MeshPart")then local gp=p:Clone(); gp.Name="Ghost_"..p.Name; gp.Anchored=true; gp.CanCollide=false; gp.CastShadow=false; pcall(function()gp.Transparency=GHOST_TRANSPARENCY end); for _,ch in ipairs(gp:GetChildren())do if ch:IsA("Decal")or ch:IsA("Texture")then ch:Destroy()end end; gp.Parent=ghostModel; pc=pc+1; if p.Name=="HumanoidRootPart"then ghostModel.PrimaryPart=gp; ghc=true end elseif p:IsA("Accessory")then local ga=p:Clone(); ga.Name="Ghost_"..p.Name; if ga:FindFirstChild("Handle")and ga.Handle:IsA("BasePart")then local h=ga.Handle; h.Anchored=true;h.CanCollide=false;pcall(function()h.Transparency=GHOST_TRANSPARENCY end)end; ga.Parent=ghostModel; pc=pc+1 end end; if pc>0 and ghc then ghostModel.Parent=Workspace else destroyGhostModel("Clone fail");return false end end; if ghostModel and ghostModel.PrimaryPart then pcall(function()ghostModel:SetPrimaryPartCFrame(hrp.CFrame)end)else destroyGhostModel("SetCF fail");return false end; return true end
+local function updateFakeLagLogic() if not featuresConfig.fake_lag.isEnabled then if ghostModel then destroyGhostModel("FL off") end return end; local c=LocalPlayer.Character; local hrp=c and c:FindFirstChild("HumanoidRootPart"); if not c or not hrp then destroyGhostModel("No char/hrp FL"); return end; if hrp.Anchored then hrp.Anchored=false end; if not createOrUpdateGhostModel() then return end; local cf,t=hrp.CFrame,tick(); table.insert(cframeHistory,{t=t,cf=cf}); local oR,rI=nil,0; for i=1,#cframeHistory do local r=cframeHistory[i]; if t-r.t>=GHOST_DELAY_SECONDS then oR=r;rI=i-1 else break end end; if rI>0 then for i=1,rI do table.remove(cframeHistory,1)end end; local tCF=oR and oR.cf; if tCF then if not lastAppliedDelayedCFrame or (tCF.Position-lastAppliedDelayedCFrame.Position).Magnitude>0.01 or(t-lastRealCFrameAppliedTime>=MIN_REAL_CFRAME_UPDATE_INTERVAL)then if pcall(function()hrp.CFrame=CFrame.new(tCF.Position)*(hrp.CFrame-hrp.CFrame.Position)end)then lastRealCFrameAppliedTime=t;lastAppliedDelayedCFrame=tCF end end else lastAppliedDelayedCFrame=nil end; if #cframeHistory>200 then table.remove(cframeHistory,1)end end
+onBhopJumpRequest = function() if not featuresConfig.bhop_mode.isEnabled then return end; local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if not h then return end; if h:GetState()~=Enum.HumanoidStateType.Jumping and h:GetState()~=Enum.HumanoidStateType.Freefall and h.FloorMaterial~=Enum.Material.Air then h.Jump=true; isBhopJumping=true; canBhopAirStrafe=true end end
+onBhopHumanoidStateChanged = function(o,n) if not featuresConfig.bhop_mode.isEnabled then return end; local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if not h then return end; if n==Enum.HumanoidStateType.Landed then isBhopJumping=false; canBhopAirStrafe=false elseif n==Enum.HumanoidStateType.Jumping or n==Enum.HumanoidStateType.Freefall then isBhopJumping=true; canBhopAirStrafe=true end end
+connectBhopStateChanged = function() if bhopStateChangedConnection then return end; local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if h then bhopStateChangedConnection=h.StateChanged:Connect(onBhopHumanoidStateChanged); local cs=h:GetState(); if cs==Enum.HumanoidStateType.Jumping or cs==Enum.HumanoidStateType.Freefall then isBhopJumping=true;canBhopAirStrafe=true else isBhopJumping=false;canBhopAirStrafe=false end else warn("BHOP: Hum not found")end end
+disconnectBhopStateChanged = function() if bhopStateChangedConnection then bhopStateChangedConnection:Disconnect(); bhopStateChangedConnection=nil end; isBhopJumping=false; canBhopAirStrafe=false end
+createEspForPlayer = function(p) if not DrawingLib then return end; if espElements[p]then return end; local e={}; e.Box=DrawingLib.new("Quad"); e.Box.Color=ESP_BOX_COLOR; e.Box.Thickness=1; e.Box.Filled=false; e.Box.Visible=false; e.Name=DrawingLib.new("Text"); e.Name.Text=p.Name; e.Name.Color=ESP_TEXT_COLOR; e.Name.Size=ESP_TEXT_SIZE; e.Name.Center=true; e.Name.Outline=true; e.Name.Visible=false; e.Health=DrawingLib.new("Text"); e.Health.Text="100/100"; e.Health.Color=ESP_TEXT_COLOR; e.Health.Size=ESP_HEALTH_SIZE; e.Health.Center=true; e.Health.Outline=true; e.Health.Visible=false; espElements[p]=e; end
+removeEspForPlayer = function(p) if espElements[p]then local e=espElements[p]; if e.Box then e.Box:Remove()end; if e.Name then e.Name:Remove()end; if e.Health then e.Health:Remove()end; espElements[p]=nil end end
+getNearestPlayerAbsolute = function() local cp, sd = nil, math.huge; local lc=LocalPlayer.Character; local lHRP=lc and lc:FindFirstChild("HumanoidRootPart"); if not lc or not lHRP then return nil end; for _,p in pairs(Players:GetPlayers())do local c=p.Character; local ht=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChild("Head"); local hum=c and c:FindFirstChildOfClass("Humanoid"); if p~=LocalPlayer and ht and h and hum and hum.Health>0 then local d=(ht.Position-lHRP.Position).Magnitude; if d<sd then sd=d; cp=p end end end; return cp end
+getNearestVisiblePlayer = function() local cp, sd = nil, math.huge; local lc=LocalPlayer.Character; local lHRP=lc and lc:FindFirstChild("HumanoidRootPart"); if not lc or not lHRP then return nil end; for _,p in pairs(Players:GetPlayers())do local c=p.Character; local ht=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChild("Head"); local hum=c and c:FindFirstChildOfClass("Humanoid"); if p~=LocalPlayer and ht and h and hum and hum.Health>0 then local d=(ht.Position-lHRP.Position).Magnitude; if d<sd then local ro=Camera.CFrame.Position; local rd=(h.Position-ro).Unit*d; local rp=RaycastParams.new(); local fl={lc,Camera,controlPanelGui,cueGui,activeFeaturesScreenGui,hitmarkerScreenGui}; if ghostModel and ghostModel.Parent then table.insert(fl,ghostModel)end; rp.FilterDescendantsInstances=fl; rp.FilterType=Enum.RaycastFilterType.Exclude; local rr=Workspace:Raycast(ro,rd,rp); if not rr or rr.Instance:IsDescendantOf(c)then sd=d; cp=p end end end end; return cp end
+local function teleportBehindPlayer(tp) local lc=LocalPlayer.Character; local tc=tp.Character; if not lc or not tc then return end; local hrp=lc:FindFirstChild("HumanoidRootPart"); local thrp=tc:FindFirstChild("HumanoidRootPart"); if not hrp or not thrp then return end; hrp.CFrame=thrp.CFrame*CFrame.new(0,0,featuresConfig.teleport_mode.currentTeleportDistance)*CFrame.Angles(0,math.pi,0) end
+local function teleportRandomlyAroundPlayer(tp) local lc=LocalPlayer.Character; local tc=tp.Character; if not lc or not tc then return end; local hrp=lc:FindFirstChild("HumanoidRootPart"); local thrp=tc:FindFirstChild("HumanoidRootPart"); if not hrp or not thrp then return end; local ra=math.random()*2*math.pi; local r=featuresConfig.anti_aim.currentAntiAimRadius; hrp.CFrame=thrp.CFrame*CFrame.new(math.cos(ra)*r,0,math.sin(ra)*r)end
+findNearestEnemy = function() -- Copied from hitmarker script
+    local nearestPlayer, nearestHumanoid, minDist = nil, nil, math.huge
+    local localChar, localHRP = LocalPlayer.Character, LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localChar or not localHRP then return nil, nil end
+    local localPos = localHRP.Position
 
--- Function to get nearest player regardless of visibility (for teleport features)
-getNearestPlayerAbsolute = function()
-    local cp, sd = nil, math.huge
-    local lc = LocalPlayer.Character
-    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
-    if not lc or not lHRP then return nil end
-
-    for _, p in pairs(Players:GetPlayers()) do
-        local c = p.Character
-        local ht = c and c:FindFirstChild("HumanoidRootPart")
-        -- Head is not strictly needed here for distance check but kept for consistency with original structure
-        local h = c and c:FindFirstChild("Head")
-        local hum = c and c:FindFirstChildOfClass("Humanoid")
-
-        if p ~= LocalPlayer and ht and h and hum and hum.Health > 0 then
-            local d = (ht.Position - lHRP.Position).Magnitude
-            if d < sd then
-                sd = d
-                cp = p
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char, humanoid, hrp = player.Character, player.Character and player.Character:FindFirstChildOfClass("Humanoid"), player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if char and humanoid and hrp and humanoid.Health > 0 then
+                local dist = (hrp.Position - localPos).Magnitude
+                if dist < minDist then minDist, nearestPlayer, nearestHumanoid = dist, player, humanoid end
             end
         end
     end
-    return cp
+    return nearestPlayer, nearestHumanoid
 end
-
--- Function to get nearest VISIBLE player (for aimbot/triggerbot)
-getNearestVisiblePlayer = function()
-    local cp, sd = nil, math.huge
-    local lc = LocalPlayer.Character
-    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
-    if not lc or not lHRP then return nil end
-
-    for _, p in pairs(Players:GetPlayers()) do
-        local c = p.Character
-        local ht = c and c:FindFirstChild("HumanoidRootPart")
-        local h = c and c:FindFirstChild("Head") -- Head is important for visibility check and aiming
-        local hum = c and c:FindFirstChildOfClass("Humanoid")
-
-        if p ~= LocalPlayer and ht and h and hum and hum.Health > 0 then
-            local d = (ht.Position - lHRP.Position).Magnitude
-            if d < sd then
-                local ro = Camera.CFrame.Position
-                local rd = (h.Position - ro).Unit * d -- Ray direction towards the Head
-                local rp = RaycastParams.new()
-                local fl = {lc, Camera, controlPanelGui, cueGui, activeFeaturesScreenGui}
-                if ghostModel and ghostModel.Parent then table.insert(fl, ghostModel) end
-                rp.FilterDescendantsInstances = fl
-                rp.FilterType = Enum.RaycastFilterType.Exclude
-                local rr = Workspace:Raycast(ro, rd, rp)
-
-                if not rr or rr.Instance:IsDescendantOf(c) then -- If no hit or hit is part of the target character
-                    sd = d
-                    cp = p
-                end
-            end
-        end
-    end
-    return cp
-end
-
-
--- Function to teleport player behind target
-local function teleportBehindPlayer(targetPlayer)
-    local localChar = LocalPlayer.Character
-    local targetChar = targetPlayer.Character
-    if not localChar or not targetChar then return end
-    local hrp = localChar:FindFirstChild("HumanoidRootPart")
-    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
-    if not hrp or not targetHrp then return end
-    local distance = featuresConfig.teleport_mode.currentTeleportDistance -- Use configured distance
-    hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, distance) * CFrame.Angles(0, math.pi, 0)
-end
-
--- Function to teleport randomly around target
-local function teleportRandomlyAroundPlayer(targetPlayer)
-    local localChar = LocalPlayer.Character
-    local targetChar = targetPlayer.Character
-    if not localChar or not targetChar then return end
-    local hrp = localChar:FindFirstChild("HumanoidRootPart")
-    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
-    if not hrp or not targetHrp then return end
-    local randomAngle = math.random() * 2 * math.pi
-    local radius = featuresConfig.anti_aim.currentAntiAimRadius -- Use configured radius
-    local offsetX = math.cos(randomAngle) * radius
-    local offsetZ = math.sin(randomAngle) * radius
-    hrp.CFrame = targetHrp.CFrame * CFrame.new(offsetX, 0, offsetZ)
-end
-
 
 -- ====================================
 -- Main Update Loop (RenderStepped)
@@ -720,161 +549,159 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
 
         if featuresConfig.fake_lag.isEnabled then updateFakeLagLogic() end
 
-        if humanoid and not featuresConfig.flight_mode.isEnabled and not featuresConfig.bhop_mode.isEnabled and humanoid.AutoRotate == false then
-            humanoid.AutoRotate = true
-        end
+        if humanoid and not featuresConfig.flight_mode.isEnabled and not featuresConfig.bhop_mode.isEnabled and not featuresConfig.teleport_mode.isEnabled and not featuresConfig.anti_aim.isEnabled and humanoid.AutoRotate == false then humanoid.AutoRotate = true end
 
-        local nearestMovementTarget = nil
-        if featuresConfig.teleport_mode.isEnabled or featuresConfig.anti_aim.isEnabled then
-            nearestMovementTarget = getNearestPlayerAbsolute() -- Use absolute for movement
-        end
+        local nearestMovementTarget = nil; if featuresConfig.teleport_mode.isEnabled or featuresConfig.anti_aim.isEnabled then nearestMovementTarget = getNearestPlayerAbsolute() end
 
         if featuresConfig.flight_mode.isEnabled then
-            if humanoid.AutoRotate == true then humanoid.AutoRotate = false end
-            local moveVector = Vector3.new(0,0,0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector=moveVector+Vector3.new(0,0,-1) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector=moveVector+Vector3.new(0,0,1) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector=moveVector+Vector3.new(-1,0,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector=moveVector+Vector3.new(1,0,0) end
-            local verticalVelocityValue = 0
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalVelocityValue=FLIGHT_VERTICAL_SPEED end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then verticalVelocityValue=-FLIGHT_VERTICAL_SPEED end
-            local calculatedWorldVelocity; local horizontalDirection=(Camera.CFrame*CFrame.new(moveVector)).Position-Camera.CFrame.Position; local horizontalSpeedComponent=Vector3.new(0,0,0)
-            if horizontalDirection.Magnitude>0.001 then horizontalSpeedComponent=Vector3.new(horizontalDirection.X,0,horizontalDirection.Z).Unit*featuresConfig.flight_mode.currentSpeed end
-            calculatedWorldVelocity=horizontalSpeedComponent+Vector3.new(0,verticalVelocityValue,0)
-            if bodyVelocity then bodyVelocity.Velocity = calculatedWorldVelocity end
-            if bodyGyro then bodyGyro.CFrame = Camera.CFrame end
+            if humanoid.AutoRotate == true then humanoid.AutoRotate = false end; local mv=Vector3.new(0,0,0); if UserInputService:IsKeyDown(Enum.KeyCode.W)then mv=mv+Vector3.new(0,0,-1)end; if UserInputService:IsKeyDown(Enum.KeyCode.S)then mv=mv+Vector3.new(0,0,1)end; if UserInputService:IsKeyDown(Enum.KeyCode.A)then mv=mv+Vector3.new(-1,0,0)end; if UserInputService:IsKeyDown(Enum.KeyCode.D)then mv=mv+Vector3.new(1,0,0)end; local vv=0; if UserInputService:IsKeyDown(Enum.KeyCode.Space)then vv=FLIGHT_VERTICAL_SPEED end; if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)then vv=-FLIGHT_VERTICAL_SPEED end; local cwV; local hd=(Camera.CFrame*CFrame.new(mv)).Position-Camera.CFrame.Position; local hsc=Vector3.new(0,0,0); if hd.Magnitude>0.001 then hsc=Vector3.new(hd.X,0,hd.Z).Unit*featuresConfig.flight_mode.currentSpeed end; cwV=hsc+Vector3.new(0,vv,0); if bodyVelocity then bodyVelocity.Velocity=cwV end; if bodyGyro then bodyGyro.CFrame=Camera.CFrame end
         elseif featuresConfig.bhop_mode.isEnabled and canBhopAirStrafe and isBhopJumping then
-            if humanoid.AutoRotate == true then humanoid.AutoRotate = false end
-            local moveDirection = Vector3.new()
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - Camera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Camera.CFrame.RightVector end
-            if moveDirection.Magnitude > 0.01 then
-                local airStrafeForce = featuresConfig.bhop_mode.currentAirStrafeForce
-                local desiredAccel = Vector3.new(moveDirection.X, 0, moveDirection.Z).Unit * airStrafeForce
-                local currentVel = hrp.Velocity
-                local newVelX = currentVel.X + desiredAccel.X * deltaTime
-                local newVelZ = currentVel.Z + desiredAccel.Z * deltaTime
-                hrp.Velocity = Vector3.new(newVelX, currentVel.Y, newVelZ)
-                local currentSpeedXZ = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
-                if currentSpeedXZ.Magnitude > MAX_BHOP_AIR_SPEED then
-                    local dir = currentSpeedXZ.Unit
-                    hrp.Velocity = Vector3.new(dir.X * MAX_BHOP_AIR_SPEED, hrp.Velocity.Y, dir.Z * MAX_BHOP_AIR_SPEED)
-                end
-            end
-        elseif featuresConfig.anti_aim.isEnabled and nearestMovementTarget then
-             if humanoid.AutoRotate == true then humanoid.AutoRotate = false end
-            teleportRandomlyAroundPlayer(nearestMovementTarget)
-        elseif featuresConfig.teleport_mode.isEnabled and nearestMovementTarget then
-             if humanoid.AutoRotate == true then humanoid.AutoRotate = false end
-            pcall(teleportBehindPlayer, nearestMovementTarget) -- Wrapped in pcall
-        end
+            if humanoid.AutoRotate==true then humanoid.AutoRotate=false end; local md=Vector3.new(); if UserInputService:IsKeyDown(Enum.KeyCode.W)then md=md+Camera.CFrame.LookVector end; if UserInputService:IsKeyDown(Enum.KeyCode.S)then md=md-Camera.CFrame.LookVector end; if UserInputService:IsKeyDown(Enum.KeyCode.A)then md=md-Camera.CFrame.RightVector end; if UserInputService:IsKeyDown(Enum.KeyCode.D)then md=md+Camera.CFrame.RightVector end; if md.Magnitude>0.01 then local af=featuresConfig.bhop_mode.currentAirStrafeForce; local da=Vector3.new(md.X,0,md.Z).Unit*af; local cv=hrp.Velocity; local nx=cv.X+da.X*deltaTime; local nz=cv.Z+da.Z*deltaTime; hrp.Velocity=Vector3.new(nx,cv.Y,nz); local csxz=Vector3.new(hrp.Velocity.X,0,hrp.Velocity.Z); if csxz.Magnitude>MAX_BHOP_AIR_SPEED then local d=csxz.Unit; hrp.Velocity=Vector3.new(d.X*MAX_BHOP_AIR_SPEED,hrp.Velocity.Y,d.Z*MAX_BHOP_AIR_SPEED)end end
+        elseif featuresConfig.anti_aim.isEnabled and nearestMovementTarget then if humanoid.AutoRotate==true then humanoid.AutoRotate=false end; teleportRandomlyAroundPlayer(nearestMovementTarget)
+        elseif featuresConfig.teleport_mode.isEnabled and nearestMovementTarget then if humanoid.AutoRotate==true then humanoid.AutoRotate=false end; pcall(teleportBehindPlayer, nearestMovementTarget) end
 
-        local calculatedCameraCFrame = nil
-        local isLocked = false
-
+        local calculatedCameraCFrame=nil
         if featuresConfig.third_person.isEnabled then
-            local character_cam = LocalPlayer.Character
-            local anchor = (character_cam and character_cam:FindFirstChild("Head")) or hrp
-            if anchor then
-                local anchorPos = anchor.Position
-                local refCamCF = Camera.CFrame
-                local currentTPDistanceZ = featuresConfig.third_person.currentDistanceZ
-                local desiredPos = anchorPos + (-refCamCF.LookVector.Unit * currentTPDistanceZ) + (refCamCF.RightVector.Unit * THIRD_PERSON_OFFSET_XY.X) + (refCamCF.UpVector.Unit * THIRD_PERSON_OFFSET_XY.Y)
-                local rayOriginForCollision = anchorPos
-                local rayDirectionForCollision = (desiredPos - anchorPos)
-                local rayDistance = rayDirectionForCollision.Magnitude
-                if rayDistance < 0.1 then rayDistance = currentTPDistanceZ end
-                rayDirectionForCollision = rayDirectionForCollision.Unit
-                local raycastParamsForCam = RaycastParams.new()
-                local filterListForCam = {character_cam, controlPanelGui, cueGui, activeFeaturesScreenGui}
-                if ghostModel and ghostModel.Parent then table.insert(filterListForCam, ghostModel) end
-                raycastParamsForCam.FilterDescendantsInstances = filterListForCam
-                raycastParamsForCam.FilterType = Enum.RaycastFilterType.Exclude
-                local hitResult = Workspace:Raycast(rayOriginForCollision, rayDirectionForCollision * rayDistance, raycastParamsForCam)
-                if hitResult then desiredPos = hitResult.Position - rayDirectionForCollision * 0.5 end
-                if not lastThirdPersonPos then lastThirdPersonPos = desiredPos end
-                lastThirdPersonPos = lastThirdPersonPos:Lerp(desiredPos, 1 - THIRD_PERSON_SMOOTHING)
-                local lookAtTarget = (charHead or hrp).Position + (charHead or hrp).CFrame.LookVector * 5
-                calculatedCameraCFrame = CFrame.new(lastThirdPersonPos, lookAtTarget)
-                if Camera.CameraType ~= Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Scriptable end
-            end
+            local cc=LocalPlayer.Character; local a=(cc and cc:FindFirstChild("Head"))or hrp; if a then local ap=a.Position; local rc=Camera.CFrame; local ctdz=featuresConfig.third_person.currentDistanceZ; local dp=ap+(-rc.LookVector.Unit*ctdz)+(rc.RightVector.Unit*THIRD_PERSON_OFFSET_XY.X)+(rc.UpVector.Unit*THIRD_PERSON_OFFSET_XY.Y); local roc=ap; local rdc=(dp-ap); local rdst=rdc.Magnitude; if rdst<0.1 then rdst=ctdz end; rdc=rdc.Unit; local rpc=RaycastParams.new(); local flc={cc,controlPanelGui,cueGui,activeFeaturesScreenGui,hitmarkerScreenGui}; if ghostModel and ghostModel.Parent then table.insert(flc,ghostModel)end; rpc.FilterDescendantsInstances=flc; rpc.FilterType=Enum.RaycastFilterType.Exclude; local hr=Workspace:Raycast(roc,rdc*rdst,rpc); if hr then dp=hr.Position-rdc*0.5 end; if not lastThirdPersonPos then lastThirdPersonPos=dp end; lastThirdPersonPos=lastThirdPersonPos:Lerp(dp,1-THIRD_PERSON_SMOOTHING); local lat=(charHead or hrp).Position+(charHead or hrp).CFrame.LookVector*5; calculatedCameraCFrame=CFrame.new(lastThirdPersonPos,lat); if Camera.CameraType~=Enum.CameraType.Scriptable then Camera.CameraType=Enum.CameraType.Scriptable end end
         end
 
-        local isAiming = false
-        if featuresConfig.aimbot_hold.currentKey then
-            if featuresConfig.aimbot_hold.currentKey:IsA("UserInputType") then isAiming = UserInputService:IsMouseButtonPressed(featuresConfig.aimbot_hold.currentKey)
-            elseif featuresConfig.aimbot_hold.currentKey:IsA("KeyCode") then isAiming = UserInputService:IsKeyDown(featuresConfig.aimbot_hold.currentKey) end
-        end
+        local isAiming=false; if featuresConfig.aimbot_hold.currentKey then if featuresConfig.aimbot_hold.currentKey:IsA("UserInputType")then isAiming=UserInputService:IsMouseButtonPressed(featuresConfig.aimbot_hold.currentKey)elseif featuresConfig.aimbot_hold.currentKey:IsA("KeyCode")then isAiming=UserInputService:IsKeyDown(featuresConfig.aimbot_hold.currentKey)end end
 
-        local aimbotTargetPlayer = nil
-        local aimbotOverrideCFrame = nil
-
+        local aimbotTargetPlayer=nil; local aimbotOverrideCFrame=nil; local isLocked=false
         if featuresConfig.aimbot_module.isEnabled and isAiming then
-            aimbotTargetPlayer = getNearestVisiblePlayer() -- Use visible for aimbot
-            if aimbotTargetPlayer then
-                local targetHead = aimbotTargetPlayer.Character and aimbotTargetPlayer.Character:FindFirstChild("Head")
-                if targetHead then
-                    isLocked = true -- isLocked will now depend on a visible target
-                    local aimFromPosition
-                    if featuresConfig.third_person.isEnabled and lastThirdPersonPos then aimFromPosition = lastThirdPersonPos
-                    else aimFromPosition = Camera.CFrame.Position end
-                    aimbotOverrideCFrame = CFrame.new(aimFromPosition, targetHead.Position)
-                    if Camera.CameraType ~= Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Scriptable end
+            aimbotTargetPlayer=getNearestVisiblePlayer(); if aimbotTargetPlayer then local th=aimbotTargetPlayer.Character and aimbotTargetPlayer.Character:FindFirstChild("Head"); if th then isLocked=true; local afp=featuresConfig.third_person.isEnabled and lastThirdPersonPos or Camera.CFrame.Position; aimbotOverrideCFrame=CFrame.new(afp,th.Position); if Camera.CameraType~=Enum.CameraType.Scriptable then Camera.CameraType=Enum.CameraType.Scriptable end end end
+        end
+        
+        if aimbotOverrideCFrame then calculatedCameraCFrame=aimbotOverrideCFrame end
+        if calculatedCameraCFrame then pcall(function()Camera.CFrame=calculatedCameraCFrame end)elseif not featuresConfig.third_person.isEnabled and Camera.CameraType==Enum.CameraType.Scriptable then if not(featuresConfig.aimbot_module.isEnabled and isAiming)then if restoreCamera then restoreCamera()end end end
+        
+        cueDot.BackgroundColor3=isLocked and DOT_COLOR_LOCKED or DOT_COLOR_NOLOCK
+
+        -- Shooting Logic
+        local doShootActionThisFrame=false; local triggerbotConfig=featuresConfig.triggerbot_module; local actualTriggerDelaySec=triggerbotConfig.currentDelayMs/1000
+        local isTryingToShootThisFrame=isLocked and((triggerbotConfig.isEnabled and isAiming)or(not triggerbotConfig.isEnabled and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)))
+        local startedTryingToShootThisFrame=isTryingToShootThisFrame and not wasTryingToShootLastFrame
+        if startedTryingToShootThisFrame then lastClickTime=currentTime end
+        if isTryingToShootThisFrame then if currentTime-lastClickTime>=actualTriggerDelaySec then doShootActionThisFrame=true end end
+        if doShootActionThisFrame then if typeof(mouse1press)=="function"then pcall(mouse1press)end; if typeof(mouse1release)=="function"then task.defer(mouse1release)end; lastClickTime=currentTime end
+        wasTryingToShootLastFrame=isTryingToShootThisFrame
+
+        -- ESP Logic
+        if featuresConfig.esp_module.isEnabled and DrawingLib then for _,p in pairs(Players:GetPlayers())do if p==LocalPlayer then continue end; local ce=p.Character; local he=ce and ce:FindFirstChildOfClass("Humanoid"); local hrpe=ce and ce:FindFirstChild("HumanoidRootPart"); local heade=ce and ce:FindFirstChild("Head"); if he and hrpe and heade and he.Health>0 then if not espElements[p]then createEspForPlayer(p)end; local els=espElements[p]; if not els then continue end; local hp,hv=Camera:WorldToViewportPoint(heade.Position+Vector3.new(0,0.5,0)); local hrpp,hrpv=Camera:WorldToViewportPoint(hrpe.Position); if hv and hrpv then local bh=math.abs(hp.Y-hrpp.Y); local bw=bh/2; local tl=Vector2.new(hp.X-bw/2,hp.Y); els.Box.PointA=tl; els.Box.PointB=Vector2.new(tl.X+bw,tl.Y); els.Box.PointC=Vector2.new(tl.X+bw,hrpp.Y); els.Box.PointD=Vector2.new(tl.X,hrpp.Y); els.Box.Visible=true; els.Name.Position=Vector2.new(hp.X,hp.Y-ESP_TEXT_SIZE-2); els.Name.Visible=true; local ht=math.floor(he.Health).."/"..math.floor(he.MaxHealth); els.Health.Text=ht; els.Health.Position=Vector2.new(hrpp.X,hrpp.Y+2); els.Health.Visible=true else els.Box.Visible=false; els.Name.Visible=false; els.Health.Visible=false end else if espElements[p]then local e=espElements[p]; e.Box.Visible=false; e.Name.Visible=false; e.Health.Visible=false end end end
+        else if next(espElements)then for _,es in pairs(espElements)do if es.Box then es.Box.Visible=false end; if es.Name then es.Name.Visible=false end; if es.Health then es.Health.Visible=false end end end end
+
+        -- Hitmarker Tracking Logic
+        if featuresConfig.hitmarker.isEnabled and hitmarkerLabel.Visible then
+            if tick() > hitmarkerVisibleUntil then
+                hitmarkerLabel.Visible = false
+                currentHitTarget = nil
+            elseif currentHitTarget then
+                local targetChar = currentHitTarget.Character
+                local targetPart = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart"))
+                if targetPart and targetChar.Parent and targetPart.Parent == targetChar and targetChar:FindFirstChildOfClass("Humanoid") and targetChar:FindFirstChildOfClass("Humanoid").Health > 0 then
+                    local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if onScreen then
+                        hitmarkerLabel.Position = UDim2.fromOffset(screenPos.X, screenPos.Y)
+                    else
+                        hitmarkerLabel.Visible = false; currentHitTarget = nil
+                    end
+                else
+                    hitmarkerLabel.Visible = false; currentHitTarget = nil
                 end
             end
         end
-        
-        if aimbotOverrideCFrame then calculatedCameraCFrame = aimbotOverrideCFrame end
 
-        if calculatedCameraCFrame then pcall(function() Camera.CFrame = calculatedCameraCFrame end)
-        elseif not featuresConfig.third_person.isEnabled and Camera.CameraType == Enum.CameraType.Scriptable then
-            if not (featuresConfig.aimbot_module.isEnabled and isAiming) then if restoreCamera then restoreCamera() end end
-        end
-        
-        cueDot.BackgroundColor3 = isLocked and DOT_COLOR_LOCKED or DOT_COLOR_NOLOCK
-
-        local shouldBeShooting = isLocked -- Auto-shoot is tied to a successful (visible) lock
-        if shouldBeShooting then
-            if currentTime - lastClickTime >= TRIGGERBOT_CLICK_INTERVAL then
-                if typeof(mouse1press) == "function" then pcall(mouse1press) end
-                if typeof(mouse1release) == "function" then task.defer(mouse1release) end
-                lastClickTime = currentTime
-            end
-        elseif lastShootingState and not shouldBeShooting then if typeof(mouse1release) == "function" then pcall(mouse1release) end end
-        lastShootingState = shouldBeShooting
-
-        if featuresConfig.esp_module.isEnabled and DrawingLib then
-             for _, player in pairs(Players:GetPlayers()) do if player==LocalPlayer then continue end; local char_esp=player.Character; local hum_esp=char_esp and char_esp:FindFirstChildOfClass("Humanoid"); local hrpEsp=char_esp and char_esp:FindFirstChild("HumanoidRootPart"); local headEsp=char_esp and char_esp:FindFirstChild("Head"); if hum_esp and hrpEsp and headEsp and hum_esp.Health>0 then if not espElements[player] then createEspForPlayer(player) end; local elements=espElements[player]; if not elements then continue end; local headPos,headVis=Camera:WorldToViewportPoint(headEsp.Position+Vector3.new(0,0.5,0)); local hrpPos,hrpVis=Camera:WorldToViewportPoint(hrpEsp.Position); if headVis and hrpVis then local boxH=math.abs(headPos.Y-hrpPos.Y); local boxW=boxH/2; local tl=Vector2.new(headPos.X-boxW/2,headPos.Y); elements.Box.PointA=tl; elements.Box.PointB=Vector2.new(tl.X+boxW,tl.Y); elements.Box.PointC=Vector2.new(tl.X+boxW,hrpPos.Y); elements.Box.PointD=Vector2.new(tl.X,hrpPos.Y); elements.Box.Visible=true; elements.Name.Position=Vector2.new(headPos.X,headPos.Y-ESP_TEXT_SIZE-2); elements.Name.Visible=true; local healthT=math.floor(hum_esp.Health).."/"..math.floor(hum_esp.MaxHealth); elements.Health.Text=healthT; elements.Health.Position=Vector2.new(hrpPos.X,hrpPos.Y+2); elements.Health.Visible=true else elements.Box.Visible=false; elements.Name.Visible=false; elements.Health.Visible=false end else if espElements[player] then local e=espElements[player]; e.Box.Visible=false; e.Name.Visible=false; e.Health.Visible=false end end end
-        else
-            if next(espElements) then for _, es in pairs(espElements) do if es.Box then es.Box.Visible=false end; if es.Name then es.Name.Visible=false end; if es.Health then es.Health.Visible=false end end end
-        end
     end)
     if not success then warn("DEBUG: ERROR in RenderStepped:", err, debug.traceback(err)) end
 end)
 print("DEBUG: RenderStepped connected.")
 
+-- ========== Hitmarker Health Check (Heartbeat) ==========
+local hitmarkerCheckConn
+hitmarkerCheckConn = RunService.Heartbeat:Connect(function(dt)
+     -- Check if feature is enabled and enough time has passed
+     if featuresConfig.hitmarker.isEnabled and tick() - lastHealthCheckTime >= HITMARKER_CHECK_INTERVAL then
+        local nearestEnemyPlayer, nearestEnemyHumanoid = findNearestEnemy()
+
+        if nearestEnemyPlayer and nearestEnemyHumanoid then
+            local currentHealth = nearestEnemyHumanoid.Health
+            local previousHealth = lastCheckedHealth[nearestEnemyPlayer]
+
+            if previousHealth == nil then
+                lastCheckedHealth[nearestEnemyPlayer] = currentHealth
+            else
+                if currentHealth < previousHealth then
+                    print("DEBUG: Hit Detected on", nearestEnemyPlayer.Name)
+                    -- No sound call here
+                    currentHitTarget = nearestEnemyPlayer
+                    local currentSize = featuresConfig.hitmarker.currentHitmarkerSize
+                    hitmarkerLabel.TextSize = currentSize
+                    hitmarkerLabel.Size = UDim2.fromOffset(currentSize, currentSize)
+
+                    local enemyChar = nearestEnemyPlayer.Character
+                    local enemyPart = enemyChar and (enemyChar:FindFirstChild("Head") or enemyChar:FindFirstChild("HumanoidRootPart"))
+                    if enemyPart then
+                        local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(enemyPart.Position)
+                        if onScreen then
+                            hitmarkerLabel.Position = UDim2.fromOffset(screenPos.X, screenPos.Y)
+                            hitmarkerLabel.Visible = true
+                            hitmarkerVisibleUntil = tick() + HITMARKER_DURATION
+                        else
+                            currentHitTarget = nil -- Target initially off-screen
+                        end
+                    else
+                         currentHitTarget = nil -- No valid part
+                    end
+                end
+                lastCheckedHealth[nearestEnemyPlayer] = currentHealth -- Update health after check
+            end
+        end
+        lastHealthCheckTime = tick() -- Update check time regardless of finding an enemy
+     end
+end)
+print("DEBUG: Hitmarker Heartbeat connected.")
+
+
 -- ========== Player Added/Removed Handlers ==========
-print("DEBUG: Connecting Player Handlers (ESP)...")
-Players.PlayerAdded:Connect(function(player) if DrawingLib then createEspForPlayer(player) end end)
-Players.PlayerRemoving:Connect(removeEspForPlayer)
-if DrawingLib then for _, player in pairs(Players:GetPlayers()) do if player ~= LocalPlayer then createEspForPlayer(player) end end end
+print("DEBUG: Connecting Player Handlers (ESP & Hitmarker)...")
+Players.PlayerAdded:Connect(function(p)
+    if DrawingLib then createEspForPlayer(p) end
+    -- No need to immediately track health for hitmarker, done on first check
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeEspForPlayer(p) -- For ESP
+    if lastCheckedHealth[p] then -- For Hitmarker
+        lastCheckedHealth[p] = nil
+        print("DEBUG: Removed health tracking for player:", p.Name)
+    end
+    if currentHitTarget == p then -- For Hitmarker tracking
+        currentHitTarget = nil
+        hitmarkerLabel.Visible = false
+    end
+end)
+
+-- Initialize ESP for existing players
+if DrawingLib then for _,p in pairs(Players:GetPlayers())do if p~=LocalPlayer then createEspForPlayer(p)end end end
 print("DEBUG: Initial players processed for ESP.")
 
 -- ========== Character Added/Removed Handlers ==========
 print("DEBUG: Connecting Character Handlers...")
-LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-    if destroyGhostModel then destroyGhostModel("New char") end
-    if featuresConfig.fake_lag.isEnabled and LocalPlayer.Character == newCharacter then task.wait(0.1); if createOrUpdateGhostModel then createOrUpdateGhostModel() end end
-    if featuresConfig.flight_mode.isEnabled then task.wait(0.2); if setNoclipState then setNoclipState(true) end; if setFlightPhysics then setFlightPhysics(true) end end
-    if featuresConfig.bhop_mode.isEnabled then task.wait(0.1); if connectBhopStateChanged then connectBhopStateChanged() end end
+LocalPlayer.CharacterAdded:Connect(function(nc)
+    if destroyGhostModel then destroyGhostModel("New char")end
+    if featuresConfig.fake_lag.isEnabled and LocalPlayer.Character==nc then task.wait(0.1); if createOrUpdateGhostModel then createOrUpdateGhostModel()end end
+    if featuresConfig.flight_mode.isEnabled then task.wait(0.2); if setNoclipState then setNoclipState(true)end; if setFlightPhysics then setFlightPhysics(true)end end
+    if featuresConfig.bhop_mode.isEnabled then task.wait(0.1); if connectBhopStateChanged then connectBhopStateChanged()end end
+    -- Reset hitmarker on respawn
+    if hitmarkerLabel then hitmarkerLabel.Visible = false end
+    currentHitTarget = nil
 end)
-LocalPlayer.CharacterRemoving:Connect(function(oldCharacter)
-    if destroyGhostModel then destroyGhostModel("Char removed") end
-    if featuresConfig.flight_mode.isEnabled and setFlightPhysics then setFlightPhysics(false) end
-    if disconnectBhopStateChanged then disconnectBhopStateChanged() end
+
+LocalPlayer.CharacterRemoving:Connect(function(oc)
+    if destroyGhostModel then destroyGhostModel("Char removed")end
+    if featuresConfig.flight_mode.isEnabled and setFlightPhysics then setFlightPhysics(false)end
+    if disconnectBhopStateChanged then disconnectBhopStateChanged()end
+    -- No specific hitmarker action needed on removal, PlayerRemoving handles it
 end)
 print("DEBUG: Character Handlers connected.")
 
@@ -883,97 +710,67 @@ print("DEBUG: Connecting Input Handling...")
 local inputConn
 inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
     if currentlyBindingFeature then
-        if input.KeyCode == CANCEL_BIND_KEY then resetButtonStates(); return end
-        local conf = featuresConfig[currentlyBindingFeature]; if not conf then resetButtonStates(); return end
-        local newKeyCand = nil; local isRes = false
-        if input.UserInputType == Enum.UserInputType.Keyboard then newKeyCand=input.KeyCode; local k=input.KeyCode; if k==Enum.KeyCode.LeftShift or k==Enum.KeyCode.RightShift or k==Enum.KeyCode.LeftControl or k==Enum.KeyCode.RightControl or k==Enum.KeyCode.Tab or k==CANCEL_BIND_KEY then isRes=true end
-        elseif input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3 then newKeyCand=input.UserInputType
-        else resetButtonStates(); return end
-        if not isRes and newKeyCand then for id,c in pairs(featuresConfig)do if id~=currentlyBindingFeature and c.currentKey==newKeyCand then isRes=true;break end end end
-        if isRes then return end
-        if newKeyCand then conf.currentKey=newKeyCand; if updateFeatureKeyDisplay then updateFeatureKeyDisplay(conf) end end
-        resetButtonStates(); return
+        if input.KeyCode == CANCEL_BIND_KEY then resetButtonStates(); return end; local conf=featuresConfig[currentlyBindingFeature]; if not conf then resetButtonStates(); return end; local nkC=nil; local iR=false
+        if input.UserInputType==Enum.UserInputType.Keyboard then nkC=input.KeyCode; local k=input.KeyCode; if k==Enum.KeyCode.LeftShift or k==Enum.KeyCode.RightShift or k==Enum.KeyCode.LeftControl or k==Enum.KeyCode.RightControl or k==Enum.KeyCode.Tab or k==CANCEL_BIND_KEY then iR=true end
+        elseif input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3 then nkC=input.UserInputType
+        else resetButtonStates(); return end; if not iR and nkC then for id,c in pairs(featuresConfig)do if id~=currentlyBindingFeature and c.currentKey==nkC then iR=true;break end end end; if iR then return end
+        if nkC then conf.currentKey=nkC; if updateFeatureKeyDisplay then updateFeatureKeyDisplay(conf)end end; resetButtonStates(); return
     end
 
-    if featuresConfig.bhop_mode and featuresConfig.bhop_mode.isEnabled and input.KeyCode == Enum.KeyCode.Space then
-        if not gameProcessedEvent then if onBhopJumpRequest then onBhopJumpRequest() end end
-    end
+    if featuresConfig.bhop_mode and featuresConfig.bhop_mode.isEnabled and input.KeyCode==Enum.KeyCode.Space then if not gameProcessedEvent then if onBhopJumpRequest then onBhopJumpRequest()end end end
 
-    local mainPanelActive = mainFrame and mainFrame.Visible and mainFrame.Active
-    local activeListActive = activeFeaturesFrame and activeFeaturesFrame.Visible and activeFeaturesFrame.Active
+    local isAimbotHoldKey = featuresConfig.aimbot_hold and ((input.UserInputType==Enum.UserInputType.Keyboard and input.KeyCode==featuresConfig.aimbot_hold.currentKey)or(input.UserInputType~=Enum.UserInputType.Keyboard and input.UserInputType==featuresConfig.aimbot_hold.currentKey))
+    local isGuiToggleKey = featuresConfig.gui_toggle and input.KeyCode==featuresConfig.gui_toggle.currentKey
+    local isActiveListToggleKey = featuresConfig.active_features_gui_toggle and input.KeyCode==featuresConfig.active_features_gui_toggle.currentKey
 
-    if gameProcessedEvent and not (mainPanelActive or activeListActive) then
-      local isAimbotHoldKey = false
-      if featuresConfig.aimbot_hold and input.UserInputType == featuresConfig.aimbot_hold.currentKey then isAimbotHoldKey = true end
-      if not isAimbotHoldKey then return end
-    end
+    if gameProcessedEvent and not isAimbotHoldKey and not isGuiToggleKey and not isActiveListToggleKey then return end
     
-    for fid, cfg in pairs(featuresConfig) do
-        if cfg.currentKey and ((input.UserInputType==Enum.UserInputType.Keyboard and input.KeyCode==cfg.currentKey)or(input.UserInputType~=Enum.UserInputType.Keyboard and input.UserInputType==cfg.currentKey)) then
-            if gameProcessedEvent and fid ~= "gui_toggle" and fid ~= "active_features_gui_toggle" then
-                 if not (cfg.id == "aimbot_hold" and input.UserInputType:IsA("UserInputType") and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3)) then return end
-            end
+    for fid,cfg in pairs(featuresConfig)do if cfg.currentKey and((input.UserInputType==Enum.UserInputType.Keyboard and input.KeyCode==cfg.currentKey)or(input.UserInputType~=Enum.UserInputType.Keyboard and input.UserInputType==cfg.currentKey))then
+        if gameProcessedEvent and fid~="gui_toggle" and fid~="active_features_gui_toggle" and fid~="aimbot_hold" then return end
 
-            if fid=="gui_toggle" then
-                cfg.isEnabled=not cfg.isEnabled;
-                if mainFrame then mainFrame.Visible=cfg.isEnabled end;
-                UserInputService.MouseIconEnabled=(cfg.isEnabled or featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame.Visible)
-                if cfg.isEnabled then UserInputService.MouseBehavior = Enum.MouseBehavior.Default else if not (featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame.Visible) then UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end end
-                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end
-                if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
-            elseif fid=="active_features_gui_toggle" then
-                cfg.isEnabled = not cfg.isEnabled
-                activeFeaturesGuiVisible = cfg.isEnabled -- Update state var
-                if activeFeaturesFrame then activeFeaturesFrame.Visible = activeFeaturesGuiVisible end
-                if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end -- Update content and visibility logic
-                UserInputService.MouseIconEnabled=(featuresConfig.gui_toggle.isEnabled or (cfg.isEnabled and activeFeaturesFrame.Visible))
-                if cfg.isEnabled and activeFeaturesFrame.Visible then UserInputService.MouseBehavior = Enum.MouseBehavior.Default else if not featuresConfig.gui_toggle.isEnabled then UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end end
-                if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
-            elseif fid == "aimbot_hold" then -- No toggle action
-            else
-                cfg.isEnabled=not cfg.isEnabled;
-                if updateFeatureToggleButton then updateFeatureToggleButton(cfg) end;
-                if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end
-            end
-            return
-        end
-    end
+        if fid=="gui_toggle" then cfg.isEnabled=not cfg.isEnabled; if mainFrame then mainFrame.Visible=cfg.isEnabled end; UserInputService.MouseIconEnabled=(cfg.isEnabled or(featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)); if cfg.isEnabled then UserInputService.MouseBehavior=Enum.MouseBehavior.Default else if not(featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)then UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter end end; if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end
+        elseif fid=="active_features_gui_toggle" then cfg.isEnabled=not cfg.isEnabled; activeFeaturesGuiVisible=cfg.isEnabled; if activeFeaturesFrame then activeFeaturesFrame.Visible=activeFeaturesGuiVisible and(#activeFeaturesFrame:GetChildren()>3)end; if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay()end; UserInputService.MouseIconEnabled=(featuresConfig.gui_toggle.isEnabled or(cfg.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)); if cfg.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible then UserInputService.MouseBehavior=Enum.MouseBehavior.Default else if not featuresConfig.gui_toggle.isEnabled then UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter end end; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end
+        elseif fid=="aimbot_hold" then -- Do nothing on press, state checked in RenderStepped
+        else cfg.isEnabled=not cfg.isEnabled; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end; if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end end
+        return
+    end end
 end)
 print("DEBUG: Input Handling connected.")
 
 -- ========== Initialization ==========
 if mainFrame then mainFrame.Visible = featuresConfig.gui_toggle.isEnabled end
 if activeFeaturesFrame then activeFeaturesFrame.Visible = activeFeaturesGuiVisible end
-updateActiveFeaturesDisplay() -- Initial population of active features list
+updateActiveFeaturesDisplay()
 
-UserInputService.MouseIconEnabled = (featuresConfig.gui_toggle.isEnabled or (featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame.Visible))
+-- Set initial hitmarker visibility based on config
+if featuresConfig.hitmarker.onToggle then
+     pcall(featuresConfig.hitmarker.onToggle, featuresConfig.hitmarker, featuresConfig.hitmarker.isEnabled)
+end
+
+UserInputService.MouseIconEnabled = (featuresConfig.gui_toggle.isEnabled or (featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible))
 if UserInputService.MouseIconEnabled then UserInputService.MouseBehavior = Enum.MouseBehavior.Default else UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end
 
 -- Cleanup function
 local function cleanup()
-    print("DEBUG: Script cleanup initiated (Solara v6)...")
+    print("DEBUG: Script cleanup initiated (Solara v6 + Hitmarker)...")
     if rsConn then rsConn:Disconnect(); rsConn=nil end
+    if hitmarkerCheckConn then hitmarkerCheckConn:Disconnect(); hitmarkerCheckConn=nil end -- Disconnect heartbeat
     if inputConn then inputConn:Disconnect(); inputConn=nil end
-    if setFlightPhysics then setFlightPhysics(false) end
-    if setNoclipState then setNoclipState(false) end
-    if disconnectBhopStateChanged then disconnectBhopStateChanged() end
-    if destroyGhostModel then destroyGhostModel("Script cleanup") end
-    for player, _ in pairs(espElements) do removeEspForPlayer(player) end
-    if controlPanelGui and controlPanelGui.Parent then controlPanelGui:Destroy() end
-    if activeFeaturesScreenGui and activeFeaturesScreenGui.Parent then activeFeaturesScreenGui:Destroy() end
-    if cueGui and cueGui.Parent then cueGui:Destroy() end
-    if featuresConfig.third_person.isEnabled and restoreCamera then pcall(restoreCamera) end
-    local char_cleanup = LocalPlayer.Character
-    local humanoid_cleanup = char_cleanup and char_cleanup:FindFirstChildOfClass("Humanoid")
-    if humanoid_cleanup and humanoid_cleanup.AutoRotate == false then
-        if not featuresConfig.flight_mode.isEnabled and not featuresConfig.bhop_mode.isEnabled then humanoid_cleanup.AutoRotate = true end
-    end
-    UserInputService.MouseIconEnabled = true
-    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    print("DEBUG: Cleanup complete (Solara v6).")
+    if setFlightPhysics then setFlightPhysics(false)end; if setNoclipState then setNoclipState(false)end
+    if disconnectBhopStateChanged then disconnectBhopStateChanged()end; if destroyGhostModel then destroyGhostModel("Script cleanup")end
+    for p,_ in pairs(espElements)do removeEspForPlayer(p)end;
+    if controlPanelGui and controlPanelGui.Parent then controlPanelGui:Destroy()end
+    if activeFeaturesScreenGui and activeFeaturesScreenGui.Parent then activeFeaturesScreenGui:Destroy()end
+    if cueGui and cueGui.Parent then cueGui:Destroy()end
+    if hitmarkerScreenGui and hitmarkerScreenGui.Parent then hitmarkerScreenGui:Destroy() end -- Cleanup Hitmarker GUI
+    if featuresConfig.third_person.isEnabled and restoreCamera then pcall(restoreCamera)end
+    local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if h and h.AutoRotate==false then if not featuresConfig.flight_mode.isEnabled and not featuresConfig.bhop_mode.isEnabled then h.AutoRotate=true end end
+    UserInputService.MouseIconEnabled=true; UserInputService.MouseBehavior=Enum.MouseBehavior.Default; print("DEBUG: Cleanup complete (Solara v6 + Hitmarker).")
 end
 
-if script and typeof(script) == "Instance" then script.Destroying:Connect(cleanup) end
-if featuresConfig.bhop_mode.isEnabled then if connectBhopStateChanged then connectBhopStateChanged() end end
+if script and typeof(script)=="Instance" then script.Destroying:Connect(cleanup)end
+if featuresConfig.bhop_mode.isEnabled then if connectBhopStateChanged then connectBhopStateChanged()end end
+
+print("DEBUG: Script v6 fully loaded and initialized with Hitmarker feature.")
 
 print("DEBUG: Script v6 fully loaded and initialized.")
