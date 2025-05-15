@@ -98,8 +98,8 @@ local MIN_AIR_STRAFE_FORCE = 100
 local MAX_AIR_STRAFE_FORCE = 5000
 local MAX_BHOP_AIR_SPEED = 70
 
-local DOT_COLOR_NOLOCK=Color3.fromRGB(255,255,255); local DOT_COLOR_LOCKED=Color3.fromRGB(255,0,0); local DOT_SIZE=Vector2.new(4,4)
-local ESP_BOX_COLOR=Color3.fromRGB(0,150,255); local ESP_TEXT_COLOR=Color3.fromRGB(255,255,255); local ESP_TEXT_SIZE=14; local ESP_HEALTH_SIZE=12
+local DOT_COLOR_NOLOCK=Color3.fromRGB(220,220,220); local DOT_COLOR_LOCKED=Color3.fromRGB(200,0,0); local DOT_SIZE=Vector2.new(4,4) -- Adjusted for new theme
+local ESP_BOX_COLOR=Color3.fromRGB(200,0,0); local ESP_TEXT_COLOR=Color3.fromRGB(220,220,220); local ESP_TEXT_SIZE=14; local ESP_HEALTH_SIZE=12 -- Adjusted for new theme
 
 local THIRD_PERSON_OFFSET_XY = Vector2.new(1.5, 2)
 local DEFAULT_THIRD_PERSON_DISTANCE_Z = 8
@@ -118,7 +118,7 @@ local HITMARKER_TEXT = "X"
 local DEFAULT_HITMARKER_SIZE = 30
 local MIN_HITMARKER_SIZE = 10
 local MAX_HITMARKER_SIZE = 100
-local HITMARKER_COLOR = Color3.fromRGB(255, 255, 255) -- White
+local HITMARKER_COLOR = Color3.fromRGB(255, 255, 255) -- White (Effective against dark themes)
 local HITMARKER_OUTLINE_COLOR = Color3.fromRGB(0, 0, 0) -- Black Outline
 
 print("DEBUG: Initial default configurations set.")
@@ -149,12 +149,15 @@ local hitmarkerVisibleUntil = 0 -- Timestamp (tick())
 local currentHitTarget = nil -- Stores the Player instance of the current hit target for tracking
 local lastHealthCheckTime = 0 -- For timing health checks
 
+-- Friendly Player State
+local friendlyPlayersState = {} -- [PlayerInstance] = true (if friendly)
+
 print("DEBUG: Core state variables initialized.")
 
 -- Forward declaration
 local setFlightPhysics, destroyGhostModel, createOrUpdateGhostModel, restoreCamera, updateFeatureToggleButton, updateFeatureKeyDisplay, setNoclipState
 local onBhopJumpRequest, onBhopHumanoidStateChanged, connectBhopStateChanged, disconnectBhopStateChanged
-local updateActiveFeaturesDisplay
+local updateActiveFeaturesDisplay, updateFriendlyPlayersDisplay
 local getNearestPlayerAbsolute, getNearestVisiblePlayer
 local findNearestEnemy -- Added for Hitmarker
 
@@ -167,7 +170,6 @@ end
 
 -- ========== Features Configuration & State Management Table ==========
 featuresConfig = {
-    -- ... (Aiming, ESP, Movement categories remain the same) ...
     aimbot_module = { id = "aimbot_module", displayName = "自動瞄準模組", category = "瞄準", isEnabled = true, ui = {}, showInActiveList = true },
     triggerbot_module = {
         id = "triggerbot_module", displayName = "自動開槍", category = "瞄準", isEnabled = true,
@@ -230,19 +232,17 @@ featuresConfig = {
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
-     hitmarker = { -- NEW HITMARKER FEATURE
+     hitmarker = {
         id = "hitmarker", displayName = "命中標記", category = "雜項", isEnabled = true,
-        currentHitmarkerSize = DEFAULT_HITMARKER_SIZE, -- Size controlled by slider
+        currentHitmarkerSize = DEFAULT_HITMARKER_SIZE,
         ui = {}, showInActiveList = true,
         onToggle = function(self, enabled)
-            -- Find the hitmarkerLabel (declared later)
              local hmLabel = hitmarkerScreenGui and hitmarkerScreenGui:FindFirstChild("HitmarkerX")
              if not enabled and hmLabel then
                  hmLabel.Visible = false
-                 currentHitTarget = nil -- Stop tracking if disabled
+                 currentHitTarget = nil
              end
              if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
-             -- No sound for toggling hitmarker itself
         end
     },
     fake_lag = {
@@ -254,10 +254,17 @@ featuresConfig = {
             if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end
         end
     },
+    friendly_players_list = {
+        id = "friendly_players_list",
+        displayName = "友軍勾選單",
+        category = "設定",
+        ui = {},
+        showInActiveList = false
+    },
     gui_toggle = { id = "gui_toggle", displayName = "開關主介面", category = "設定", isEnabled = true, currentKey = TOGGLE_GUI_KEY_INIT, ui = {}, onToggle = function() if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay() end end },
     active_features_gui_toggle = { id = "active_features_gui_toggle", displayName = "開關啟用列表", category = "設定", isEnabled = true, currentKey = ACTIVE_FEATURES_GUI_TOGGLE_KEY_INIT, ui = {} }
 }
-print("DEBUG: featuresConfig initialized with hitmarker.")
+print("DEBUG: featuresConfig initialized with hitmarker and friendly_players_list.")
 
 if not DrawingLib and featuresConfig.esp_module.isEnabled then featuresConfig.esp_module.isEnabled = false end
 
@@ -268,19 +275,31 @@ function getKeyName(inputObject)
     return s and n or "錯誤"
 end
 
-local theme = {
-    Background = Color3.fromRGB(30, 32, 37), LighterBackground = Color3.fromRGB(40, 42, 48), ElementBackground = Color3.fromRGB(47, 49, 54),
-    Accent = Color3.fromRGB(0, 170, 255), TextPrimary = Color3.fromRGB(220, 221, 222), TextSecondary = Color3.fromRGB(185, 187, 190),
-    Border = Color3.fromRGB(20, 22, 25), Success = Color3.fromRGB(70, 180, 70), Failure = Color3.fromRGB(200, 70, 70),
-    KeybindText = Color3.fromRGB(180, 180, 255), ActiveListText = Color3.fromRGB(100, 220, 100),
+local theme = { -- MODIFIED: Red/Black Aimware-like Theme
+    Background = Color3.fromRGB(15, 15, 15),          -- Near Black
+    LighterBackground = Color3.fromRGB(25, 25, 25),     -- Dark Grey
+    ElementBackground = Color3.fromRGB(35, 35, 35),     -- Slightly Lighter Dark Grey
+    Accent = Color3.fromRGB(200, 0, 0),               -- Strong Red
+    TextPrimary = Color3.fromRGB(220, 220, 220),       -- Light Grey / Off-White
+    TextSecondary = Color3.fromRGB(150, 150, 150),     -- Medium Grey
+    Border = Color3.fromRGB(50,0,0), --Color3.fromRGB(5, 5, 5),                -- Very Dark Grey / Near Black or Dark Red
+    Success = Color3.fromRGB(0, 180, 0),               -- Distinct Green
+    Failure = Color3.fromRGB(200, 0, 0),               -- Strong Red (Same as Accent)
+    KeybindText = Color3.fromRGB(200, 0, 0),           -- Accent Red
+    ActiveListText = Color3.fromRGB(200, 0, 0),        -- Accent Red
+    CheckboxChecked = Color3.fromRGB(200, 0, 0),       -- Accent Red
+    CheckboxUnchecked = Color3.fromRGB(100, 100, 100), -- Darker Grey for unchecked
+    SearchBoxPlaceholder = Color3.fromRGB(100, 100, 100)-- Darker Grey
 }
+
 
 updateFeatureToggleButton = function(featureConfig)
     if featureConfig and featureConfig.ui and featureConfig.ui.toggleButton then
         local btn = featureConfig.ui.toggleButton
         if featureConfig.isEnabled then
-            btn.Text = featureConfig.displayName; btn.TextColor3 = theme.Success
-            btn.BackgroundColor3 = theme.ElementBackground; btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Success
+            btn.Text = featureConfig.displayName; btn.TextColor3 = theme.TextPrimary -- Use TextPrimary for enabled text on dark buttons
+            btn.BackgroundColor3 = theme.Accent -- Use Accent for background of enabled toggle
+            btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Border -- theme.Accent or a darker shade of it
         else
             btn.Text = featureConfig.displayName; btn.TextColor3 = theme.TextSecondary
             btn.BackgroundColor3 = theme.ElementBackground; btn.BorderSizePixel = 1; btn.BorderColor3 = theme.Border
@@ -288,6 +307,8 @@ updateFeatureToggleButton = function(featureConfig)
          if featureConfig.id == "gui_toggle" or featureConfig.id == "active_features_gui_toggle" then
              btn.Text = (featureConfig.isEnabled and "[ON] " or "[OFF] ") .. featureConfig.displayName
              btn.BorderColor3 = featureConfig.isEnabled and theme.Success or theme.Failure
+             btn.BackgroundColor3 = theme.ElementBackground -- Keep consistent for these specific toggles
+             btn.TextColor3 = featureConfig.isEnabled and theme.Success or theme.Failure
          end
     end
 end
@@ -295,6 +316,7 @@ end
 updateFeatureKeyDisplay = function(featureConfig)
     if featureConfig and featureConfig.ui and featureConfig.ui.keyDisplayLabel then
         featureConfig.ui.keyDisplayLabel.Text = getKeyName(featureConfig.currentKey)
+        featureConfig.ui.keyDisplayLabel.TextColor3 = theme.KeybindText -- Ensure keybind text uses the theme
     end
 end
 
@@ -302,45 +324,55 @@ resetButtonStates = function()
     if currentlyBindingFeature then
         local config = featuresConfig[currentlyBindingFeature]
         if config and config.ui and config.ui.changeKeyButton then
-            config.ui.changeKeyButton.Text = "綁定"; config.ui.changeKeyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+            config.ui.changeKeyButton.Text = "綁定"; config.ui.changeKeyButton.BackgroundColor3 = theme.ElementBackground -- Use ElementBackground for reset
+            config.ui.changeKeyButton.BorderColor3 = theme.Border
+            config.ui.changeKeyButton.TextColor3 = theme.TextPrimary
         end
     end
     currentlyBindingFeature = nil
 end
 
 -- ========== New GUI Creation (CS2 Inspired) ==========
-print("DEBUG: Creating new CS2-inspired Control Panel GUI v6...")
+print("DEBUG: Creating NiggaLOSE v7.0 Panel GUI...") -- MODIFIED
 local controlPanelGui = Instance.new("ScreenGui")
-controlPanelGui.Name = "SolaraPanel_v6_Main"; controlPanelGui.ResetOnSpawn = false; controlPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+controlPanelGui.Name = "NiggaLOSE_v7_Main"; controlPanelGui.ResetOnSpawn = false; controlPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 controlPanelGui.Parent = PlayerGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"; mainFrame.Size = UDim2.new(0, 550, 0, 400)
+mainFrame.Name = "MainFrame"; mainFrame.Size = UDim2.new(0, 550, 0, 420)
 mainFrame.Position = UDim2.new(0.5, -mainFrame.Size.X.Offset / 2, 0.5, -mainFrame.Size.Y.Offset / 2)
 mainFrame.BackgroundColor3 = theme.Background; mainFrame.BorderSizePixel = 1; mainFrame.BorderColor3 = theme.Border
 mainFrame.Active = true; mainFrame.Draggable = true; mainFrame.Parent = controlPanelGui; mainFrame.Visible = featuresConfig.gui_toggle.isEnabled
 
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"; titleBar.Parent = mainFrame; titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = theme.LighterBackground; titleBar.BorderSizePixel = 0
+titleBar.BackgroundColor3 = theme.Accent; -- MODIFIED: Title bar with Accent color
+titleBar.BorderSizePixel = 0
 
 local logoAssetId = "rbxassetid://124006968336886"; local logoSize = 24; local titleBarPadding = 5
 local logoLeft = Instance.new("ImageLabel")
 logoLeft.Name = "LogoLeft"; logoLeft.Parent = titleBar; logoLeft.Size = UDim2.new(0, logoSize, 0, logoSize); logoLeft.Position = UDim2.new(0, titleBarPadding, 0.5, -logoSize/2)
 logoLeft.Image = logoAssetId; logoLeft.BackgroundTransparency = 1; logoLeft.ScaleType = Enum.ScaleType.Fit
+logoLeft.ImageColor3 = theme.TextPrimary -- Make logo visible on red bar
+
 local logoRight = Instance.new("ImageLabel")
 logoRight.Name = "LogoRight"; logoRight.Parent = titleBar; logoRight.Size = UDim2.new(0, logoSize, 0, logoSize); logoRight.Position = UDim2.new(1, -(logoSize + titleBarPadding), 0.5, -logoSize/2)
 logoRight.Image = logoAssetId; logoRight.BackgroundTransparency = 1; logoRight.ScaleType = Enum.ScaleType.Fit
+logoRight.ImageColor3 = theme.TextPrimary -- Make logo visible on red bar
+
 local websiteLabel = Instance.new("TextLabel")
 websiteLabel.Name = "WebsiteLabel"; websiteLabel.Parent = titleBar; local websiteLabelWidth = 160
 websiteLabel.Size = UDim2.new(0, websiteLabelWidth, 0, 12); websiteLabel.Position = UDim2.new(1, -(logoSize + titleBarPadding + websiteLabelWidth + titleBarPadding), 0.5, -6)
-websiteLabel.Text = "iishong0w0.github.io/niggalose"; websiteLabel.Font = Enum.Font.SourceSansLight; websiteLabel.TextSize = 10; websiteLabel.TextColor3 = theme.TextSecondary
+websiteLabel.Text = "iishong0w0.github.io/niggalose"; websiteLabel.Font = Enum.Font.SourceSansLight; websiteLabel.TextSize = 10; websiteLabel.TextColor3 = theme.TextPrimary -- Adjusted for visibility on red
 websiteLabel.TextXAlignment = Enum.TextXAlignment.Right; websiteLabel.BackgroundTransparency = 1
+
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"; titleLabel.Parent = titleBar; titleLabel.Text = "niggaLOSE+ v6.0S"
+titleLabel.Name = "Title"; titleLabel.Parent = titleBar; titleLabel.Text = "NiggaLOSE v7.0" -- MODIFIED: Name Change
 local titleLabelXOffset = titleBarPadding + logoSize + titleBarPadding; local titleLabelWidthReduction = titleLabelXOffset + (websiteLabelWidth + titleBarPadding + logoSize + titleBarPadding)
 titleLabel.Position = UDim2.new(0, titleLabelXOffset, 0, 0); titleLabel.Size = UDim2.new(1, -titleLabelWidthReduction, 1, 0)
-titleLabel.TextColor3 = theme.TextPrimary; titleLabel.Font = Enum.Font.GothamSemibold; titleLabel.TextSize = 16; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextColor3 = theme.TextPrimary; -- Adjusted for visibility on red
+titleLabel.Font = Enum.Font.GothamSemibold; titleLabel.TextSize = 16; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.BackgroundTransparency = 1
 
 local tabsFrame = Instance.new("Frame")
 tabsFrame.Name = "TabsFrame"; tabsFrame.Parent = mainFrame; tabsFrame.Size = UDim2.new(0, 120, 1, -30); tabsFrame.Position = UDim2.new(0, 0, 0, 30)
@@ -351,12 +383,14 @@ contentArea.Name = "ContentArea"; contentArea.Parent = mainFrame; contentArea.Si
 contentArea.BackgroundColor3 = theme.Background; contentArea.BorderSizePixel = 0
 
 local tabCategories = {"瞄準", "透視", "移動", "雜項", "設定"}; local tabButtons = {}; local contentFrames = {}; local contentListFrames = {}; local activeTab = nil
-local itemPadding = 8; local itemHeight = 28; local keyDisplayWidth = 60; local changeButtonWidth = 45
+local itemPadding = 8; local itemHeight = 28; local keyDisplayWidth = 60; local changeButtonWidth = 45; local checkboxWidth = 30;
+local searchBoxHeight = 25; local searchBoxPadding = 5
 
 local function createContentFrame(categoryName)
     local scrollFrame = Instance.new("ScrollingFrame"); scrollFrame.Name = categoryName .. "Content"; scrollFrame.Parent = contentArea
     scrollFrame.Size = UDim2.new(1, 0, 1, 0); scrollFrame.BackgroundTransparency = 1; scrollFrame.BorderSizePixel = 0; scrollFrame.Visible = false; scrollFrame.ScrollBarThickness = 6
-    scrollFrame.ScrollBarImageColor3 = theme.ElementBackground; scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+    scrollFrame.ScrollBarImageColor3 = theme.Accent; -- MODIFIED: Scrollbar color
+    scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
     local listContentFrame = Instance.new("Frame"); listContentFrame.Name = "ListContent"; listContentFrame.Parent = scrollFrame
     listContentFrame.Size = UDim2.new(1, 0, 0, 0); listContentFrame.AutomaticSize = Enum.AutomaticSize.Y; listContentFrame.BackgroundTransparency = 1
     local listLayout = Instance.new("UIListLayout"); listLayout.Parent = listContentFrame; listLayout.Padding = UDim.new(0, itemPadding); listLayout.SortOrder = Enum.SortOrder.LayoutOrder; listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -369,23 +403,179 @@ for i, categoryName in ipairs(tabCategories) do
     tabButton.Text = categoryName; tabButton.Font = Enum.Font.Gotham; tabButton.TextSize = 15; tabButton.TextColor3 = theme.TextSecondary; tabButton.BackgroundColor3 = theme.ElementBackground; tabButton.BorderSizePixel = 1; tabButton.BorderColor3 = theme.Border
     tabButtons[categoryName] = tabButton; local scrollContainerFrame, actualContentListFrame = createContentFrame(categoryName); contentFrames[categoryName] = scrollContainerFrame; contentListFrames[categoryName] = actualContentListFrame
     tabButton.MouseButton1Click:Connect(function()
-        if activeTab and contentFrames[activeTab] then tabButtons[activeTab].TextColor3 = theme.TextSecondary; tabButtons[activeTab].BackgroundColor3 = theme.ElementBackground; contentFrames[activeTab].Visible = false end
-        activeTab = categoryName; tabButton.TextColor3 = theme.Accent; tabButton.BackgroundColor3 = theme.Background; if contentFrames[categoryName] then contentFrames[categoryName].Visible = true end
+        if activeTab and contentFrames[activeTab] then
+            tabButtons[activeTab].TextColor3 = theme.TextSecondary
+            tabButtons[activeTab].BackgroundColor3 = theme.ElementBackground
+            if contentFrames[activeTab] then contentFrames[activeTab].Visible = false end
+        end
+        activeTab = categoryName
+        tabButton.TextColor3 = theme.Accent
+        tabButton.BackgroundColor3 = theme.Background -- Or a slightly lighter version of Background if preferred for active tab
+        if contentFrames[categoryName] then contentFrames[categoryName].Visible = true end
+        if categoryName == "設定" and updateFriendlyPlayersDisplay then
+            updateFriendlyPlayersDisplay()
+        end
     end)
 end
 
 -- Forward Declaration for Hitmarker Label access in Slider
 local hitmarkerLabel
 
+updateFriendlyPlayersDisplay = function()
+    local friendlyListConfig = featuresConfig.friendly_players_list
+    if not friendlyListConfig or not friendlyListConfig.ui or not friendlyListConfig.ui.scrollFrame or not friendlyListConfig.ui.searchBox then
+        return
+    end
+    local scrollFrame = friendlyListConfig.ui.scrollFrame
+    local searchBox = friendlyListConfig.ui.searchBox
+    if not scrollFrame or not scrollFrame.Parent or not searchBox or not searchBox.Parent then
+        warn("DEBUG: Friendly players UI elements not found or parented for update.")
+        return
+    end
+
+    local searchTerm = string.lower(searchBox.Text or "")
+
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("Frame") and child.Name == "PlayerEntryFrame" then
+            child:Destroy()
+        end
+    end
+    
+    local layoutOrder = 1
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local playerDisplayNameLower = string.lower(player.DisplayName or "")
+            local playerUsernameLower = string.lower(player.Name or "")
+
+            if searchTerm == "" or string.find(playerDisplayNameLower, searchTerm, 1, true) or string.find(playerUsernameLower, searchTerm, 1, true) then
+                local playerEntryFrame = Instance.new("Frame")
+                playerEntryFrame.Name = "PlayerEntryFrame"
+                playerEntryFrame.Parent = scrollFrame
+                playerEntryFrame.Size = UDim2.new(1, 0, 0, itemHeight - 2)
+                playerEntryFrame.BackgroundTransparency = 1
+                playerEntryFrame.LayoutOrder = layoutOrder
+                layoutOrder = layoutOrder + 1
+
+                local playerNameLabel = Instance.new("TextLabel")
+                playerNameLabel.Name = player.UserId .. "_FriendlyLabel"
+                playerNameLabel.Parent = playerEntryFrame
+                playerNameLabel.Size = UDim2.new(1, -(checkboxWidth + itemPadding + 5), 1, 0)
+                playerNameLabel.Position = UDim2.new(0, 0, 0, 0)
+                playerNameLabel.Font = Enum.Font.SourceSans
+                playerNameLabel.TextSize = 13
+                playerNameLabel.TextColor3 = theme.TextPrimary
+                playerNameLabel.Text = player.DisplayName .. " (@" .. player.Name .. ")" -- MODIFIED: DisplayName (@Username)
+                playerNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                playerNameLabel.BackgroundTransparency = 1
+                playerNameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+                local checkboxButton = Instance.new("TextButton")
+                checkboxButton.Name = player.UserId .. "_FriendlyCheckbox"
+                checkboxButton.Parent = playerEntryFrame
+                checkboxButton.Size = UDim2.new(0, checkboxWidth, 1, 0)
+                checkboxButton.Position = UDim2.new(1, -checkboxWidth, 0, 0)
+                checkboxButton.BackgroundColor3 = theme.ElementBackground
+                checkboxButton.BorderSizePixel = 1
+                checkboxButton.BorderColor3 = theme.Border
+                checkboxButton.Font = Enum.Font.SourceSansBold
+                checkboxButton.TextSize = 16
+                checkboxButton.TextColor3 = friendlyPlayersState[player] and theme.CheckboxChecked or theme.CheckboxUnchecked
+                checkboxButton.Text = friendlyPlayersState[player] and "X" or ""
+
+                checkboxButton.MouseButton1Click:Connect(function()
+                    friendlyPlayersState[player] = not friendlyPlayersState[player]
+                    checkboxButton.TextColor3 = friendlyPlayersState[player] and theme.CheckboxChecked or theme.CheckboxUnchecked
+                    checkboxButton.Text = friendlyPlayersState[player] and "X" or ""
+                end)
+            end
+        end
+    end
+end
+
+
 local function populateFeatureUI(config, parentFrame)
-    if config.currentKey and config.id ~= "gui_toggle" and config.id ~= "active_features_gui_toggle" and config.id ~= "aimbot_module" and config.id ~= "esp_module" and config.id ~= "triggerbot_module" then
+    if config.id == "friendly_players_list" then
+        local containerFrame = Instance.new("Frame")
+        containerFrame.Name = "FriendlyPlayersContainer"
+        containerFrame.Parent = parentFrame
+        containerFrame.Size = UDim2.new(1, 0, 0, 230)
+        containerFrame.BackgroundTransparency = 1
+        containerFrame.LayoutOrder = #parentFrame:GetChildren() + 1
+        
+        local listTitle = Instance.new("TextLabel")
+        listTitle.Name = "FriendlyListTitle"
+        listTitle.Parent = containerFrame
+        listTitle.Size = UDim2.new(1, 0, 0, 20)
+        listTitle.Position = UDim2.new(0,0,0,0)
+        listTitle.Font = Enum.Font.SourceSansSemibold
+        listTitle.TextSize = 14
+        listTitle.TextColor3 = theme.TextSecondary
+        listTitle.Text = config.displayName
+        listTitle.TextXAlignment = Enum.TextXAlignment.Left
+        listTitle.BackgroundTransparency = 1
+        
+        local searchBox = Instance.new("TextBox")
+        searchBox.Name = "FriendlySearchBox"
+        searchBox.Parent = containerFrame
+        searchBox.Size = UDim2.new(1, 0, 0, searchBoxHeight)
+        searchBox.Position = UDim2.new(0, 0, 0, 20 + searchBoxPadding)
+        searchBox.BackgroundColor3 = theme.ElementBackground
+        searchBox.BorderColor3 = theme.Border
+        searchBox.BorderSizePixel = 1
+        searchBox.Font = Enum.Font.SourceSans
+        searchBox.TextSize = 14
+        searchBox.TextColor3 = theme.TextPrimary
+        searchBox.Text = "" 
+        searchBox.PlaceholderText = "搜索玩家 (顯示名稱/使用者名稱)..." 
+        searchBox.PlaceholderColor3 = theme.SearchBoxPlaceholder
+        searchBox.ClearTextOnFocus = false
+        config.ui.searchBox = searchBox
+
+        local scroll = Instance.new("ScrollingFrame")
+        scroll.Name = "FriendlyPlayersScroll"
+        scroll.Parent = containerFrame
+        scroll.Size = UDim2.new(1, 0, 1, -(20 + searchBoxPadding + searchBoxHeight + searchBoxPadding))
+        scroll.Position = UDim2.new(0,0,0, 20 + searchBoxPadding + searchBoxHeight + searchBoxPadding)
+        scroll.BackgroundColor3 = theme.ElementBackground
+        scroll.BorderColor3 = theme.Border
+        scroll.BorderSizePixel = 1
+        scroll.ScrollBarThickness = 5
+        scroll.ScrollBarImageColor3 = theme.Accent
+        config.ui.scrollFrame = scroll
+
+        local listLayout = Instance.new("UIListLayout")
+        listLayout.Parent = scroll
+        listLayout.Padding = UDim.new(0, 3)
+        listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
+        local padding = Instance.new("UIPadding")
+        padding.Parent = scroll
+        padding.PaddingTop = UDim.new(0,5)
+        padding.PaddingLeft = UDim.new(0,5)
+        padding.PaddingRight = UDim.new(0,5)
+        padding.PaddingBottom = UDim.new(0,5)
+
+        searchBox.FocusLost:Connect(function(enterPressed)
+            -- Optional: if enterPressed and updateFriendlyPlayersDisplay then updateFriendlyPlayersDisplay() end
+        end)
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            if updateFriendlyPlayersDisplay then updateFriendlyPlayersDisplay() end
+        end)
+        
+        if updateFriendlyPlayersDisplay then updateFriendlyPlayersDisplay() end
+        return
+    end
+
+
+    if config.currentKey and config.id ~= "gui_toggle" and config.id ~= "active_features_gui_toggle" and config.id ~= "aimbot_module" and config.id ~= "esp_module" and config.id ~= "triggerbot_module" and config.id ~= "hitmarker" then
         local itemFrame = Instance.new("Frame"); itemFrame.Name = config.id .. "ItemFrame"; itemFrame.Parent = parentFrame; itemFrame.Size = UDim2.new(1, 0, 0, itemHeight); itemFrame.BackgroundTransparency = 1; itemFrame.LayoutOrder = #parentFrame:GetChildren() + 1
         local nameLabel = Instance.new("TextLabel"); nameLabel.Name = config.id .. "NameLabel"; nameLabel.Parent = itemFrame; nameLabel.Size = UDim2.new(1, - (keyDisplayWidth + changeButtonWidth + itemPadding * 2), 1, 0); nameLabel.Position = UDim2.new(0,0,0,0); nameLabel.Text = config.displayName; nameLabel.Font = Enum.Font.SourceSans; nameLabel.TextSize = 14; nameLabel.TextColor3 = theme.TextPrimary; nameLabel.TextXAlignment = Enum.TextXAlignment.Left; config.ui.nameLabel = nameLabel
         local keyDisplay = Instance.new("TextLabel"); keyDisplay.Name = config.id .. "KeyDisplay"; keyDisplay.Parent = itemFrame; keyDisplay.Size = UDim2.new(0, keyDisplayWidth, 1, 0); keyDisplay.Position = UDim2.new(1, -(keyDisplayWidth + changeButtonWidth + itemPadding), 0, 0); keyDisplay.BackgroundColor3 = theme.ElementBackground; keyDisplay.BorderColor3 = theme.Border; keyDisplay.BorderSizePixel = 1; keyDisplay.TextColor3 = theme.KeybindText; keyDisplay.Font = Enum.Font.SourceSansSemibold; keyDisplay.TextSize = 13; keyDisplay.Text = getKeyName(config.currentKey); keyDisplay.TextXAlignment = Enum.TextXAlignment.Center; config.ui.keyDisplayLabel = keyDisplay; updateFeatureKeyDisplay(config)
-        local changeButton = Instance.new("TextButton"); changeButton.Name = config.id .. "ChangeKeyButton"; changeButton.Parent = itemFrame; changeButton.Size = UDim2.new(0, changeButtonWidth, 1, 0); changeButton.Position = UDim2.new(1, -changeButtonWidth, 0, 0); changeButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80); changeButton.BorderSizePixel = 1; changeButton.BorderColor3 = theme.Border; changeButton.TextColor3 = theme.TextPrimary; changeButton.Font = Enum.Font.SourceSans; changeButton.TextSize = 14; changeButton.Text = "綁定"; config.ui.changeKeyButton = changeButton
+        local changeButton = Instance.new("TextButton"); changeButton.Name = config.id .. "ChangeKeyButton"; changeButton.Parent = itemFrame; changeButton.Size = UDim2.new(0, changeButtonWidth, 1, 0); changeButton.Position = UDim2.new(1, -changeButtonWidth, 0, 0); changeButton.BackgroundColor3 = theme.ElementBackground; changeButton.BorderSizePixel = 1; changeButton.BorderColor3 = theme.Border; changeButton.TextColor3 = theme.TextPrimary; changeButton.Font = Enum.Font.SourceSans; changeButton.TextSize = 14; changeButton.Text = "綁定"; config.ui.changeKeyButton = changeButton
         changeButton.MouseButton1Click:Connect(function()
-            if currentlyBindingFeature then local oC = featuresConfig[currentlyBindingFeature]; if oC and oC.ui.changeKeyButton then oC.ui.changeKeyButton.Text = "綁定"; oC.ui.changeKeyButton.BackgroundColor3 = Color3.fromRGB(60,60,80) end end
-            currentlyBindingFeature = config.id; changeButton.Text = "按..."; changeButton.BackgroundColor3 = theme.Accent
+            if currentlyBindingFeature then local oC = featuresConfig[currentlyBindingFeature]; if oC and oC.ui.changeKeyButton then oC.ui.changeKeyButton.Text = "綁定"; oC.ui.changeKeyButton.BackgroundColor3 = theme.ElementBackground; oC.ui.changeKeyButton.BorderColor3 = theme.Border; oC.ui.changeKeyButton.TextColor3 = theme.TextPrimary; end end
+            currentlyBindingFeature = config.id; changeButton.Text = "按..."; changeButton.BackgroundColor3 = theme.Accent; changeButton.TextColor3 = theme.TextPrimary; changeButton.BorderColor3 = theme.Accent;
         end)
     end
     if config.isEnabled ~= nil then
@@ -399,7 +589,7 @@ local function populateFeatureUI(config, parentFrame)
     elseif config.id == "teleport_mode" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_TELEPORT_BEHIND_DISTANCE, MAX_TELEPORT_BEHIND_DISTANCE, config.currentTeleportDistance, "TPBehindDist", "背後距離:", "currentTeleportDistance"
     elseif config.id == "anti_aim" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_ANTI_AIM_RADIUS, MAX_ANTI_AIM_RADIUS, config.currentAntiAimRadius, "AARadius", "隨機半徑:", "currentAntiAimRadius"
     elseif config.id == "triggerbot_module" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_TRIGGERBOT_DELAY_MS, MAX_TRIGGERBOT_DELAY_MS, config.currentDelayMs, "TriggerDelay", "開槍延遲 (ms):", "currentDelayMs"
-    elseif config.id == "hitmarker" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_HITMARKER_SIZE, MAX_HITMARKER_SIZE, config.currentHitmarkerSize, "HitmarkerSize", "命中標記大小:", "currentHitmarkerSize" -- HITMARKER SLIDER
+    elseif config.id == "hitmarker" then sliderMin, sliderMax, sliderCurrent, sliderIdPrefix, sliderLabelText, configValueKey = MIN_HITMARKER_SIZE, MAX_HITMARKER_SIZE, config.currentHitmarkerSize, "HitmarkerSize", "命中標記大小:", "currentHitmarkerSize"
     end
     if sliderMin then
         local sliderFrame = Instance.new("Frame"); sliderFrame.Name = sliderIdPrefix .. "SliderFrame"; sliderFrame.Parent = parentFrame; sliderFrame.Size = UDim2.new(1, 0, 0, itemHeight + 15); sliderFrame.BackgroundTransparency = 1; sliderFrame.LayoutOrder = #parentFrame:GetChildren() + 1
@@ -419,7 +609,6 @@ local function populateFeatureUI(config, parentFrame)
             if draggingSlider and i.UserInputType == Enum.UserInputType.MouseMovement then
                 local mX = UserInputService:GetMouseLocation().X; local tSX = sliderTrack.AbsolutePosition.X; local tAW = sliderTrack.AbsoluteSize.X; if tAW == 0 then return end; local rX = mX - tSX; local p = math.clamp(rX / tAW, 0, 1); local nV = sliderMin + (sliderMax - sliderMin) * p
                 if configValueKey then config[configValueKey] = nV end; updateSliderDisplay(nV)
-                -- Special case for Hitmarker: Update label size immediately
                 if config.id == "hitmarker" and hitmarkerLabel then
                     local newSize = math.floor(nV)
                     hitmarkerLabel.TextSize = newSize
@@ -440,14 +629,14 @@ print("DEBUG: Visual Cue GUI created.")
 -- ========== GUI Creation (Hitmarker) ==========
 print("DEBUG: Creating Hitmarker GUI...")
 local hitmarkerScreenGui = Instance.new("ScreenGui")
-hitmarkerScreenGui.Name = "SolaraHitmarkerDisplay"
+hitmarkerScreenGui.Name = "NiggaLOSE_HitmarkerDisplay" -- MODIFIED
 hitmarkerScreenGui.ResetOnSpawn = false
 hitmarkerScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 hitmarkerScreenGui.IgnoreGuiInset = true
-hitmarkerScreenGui.DisplayOrder = 2000 -- Should be high
+hitmarkerScreenGui.DisplayOrder = 2000
 hitmarkerScreenGui.Parent = PlayerGui
 
-hitmarkerLabel = Instance.new("TextLabel") -- Assign to the forward-declared variable
+hitmarkerLabel = Instance.new("TextLabel")
 hitmarkerLabel.Name = "HitmarkerX"
 hitmarkerLabel.Size = UDim2.fromOffset(featuresConfig.hitmarker.currentHitmarkerSize, featuresConfig.hitmarker.currentHitmarkerSize)
 hitmarkerLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -459,7 +648,7 @@ hitmarkerLabel.TextColor3 = HITMARKER_COLOR
 hitmarkerLabel.TextSize = featuresConfig.hitmarker.currentHitmarkerSize
 hitmarkerLabel.TextStrokeColor3 = HITMARKER_OUTLINE_COLOR
 hitmarkerLabel.TextStrokeTransparency = 0
-hitmarkerLabel.Visible = false -- Start hidden
+hitmarkerLabel.Visible = false
 hitmarkerLabel.Parent = hitmarkerScreenGui
 print("DEBUG: Hitmarker GUI created.")
 
@@ -470,20 +659,29 @@ for id, config in pairs(featuresConfig) do
 end
 
 if #tabCategories > 0 then
-    local firstCategory = tabCategories[1]; if tabButtons[firstCategory] and contentFrames[firstCategory] then activeTab = firstCategory; tabButtons[firstCategory].TextColor3 = theme.Accent; tabButtons[firstCategory].BackgroundColor3 = theme.Background; contentFrames[firstCategory].Visible = true end
+    local firstCategory = tabCategories[1]; if tabButtons[firstCategory] and contentFrames[firstCategory] then
+        activeTab = firstCategory
+        tabButtons[firstCategory].TextColor3 = theme.Accent
+        tabButtons[firstCategory].BackgroundColor3 = theme.Background
+        contentFrames[firstCategory].Visible = true
+    end
+    if firstCategory == "設定" and updateFriendlyPlayersDisplay then
+        updateFriendlyPlayersDisplay()
+    end
 end
 print("DEBUG: Main GUI content populated.")
 
 -- ========== Active Features Display GUI ==========
 print("DEBUG: Creating Active Features Display GUI...")
 local activeFeaturesScreenGui = Instance.new("ScreenGui")
-activeFeaturesScreenGui.Name = "SolaraPanel_v6_ActiveFeatures"; activeFeaturesScreenGui.ResetOnSpawn = false; activeFeaturesScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; activeFeaturesScreenGui.DisplayOrder = 100; activeFeaturesScreenGui.Parent = PlayerGui
+activeFeaturesScreenGui.Name = "NiggaLOSE_ActiveFeatures"; -- MODIFIED
+activeFeaturesScreenGui.ResetOnSpawn = false; activeFeaturesScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; activeFeaturesScreenGui.DisplayOrder = 100; activeFeaturesScreenGui.Parent = PlayerGui
 local activeFeaturesFrame = Instance.new("Frame")
 activeFeaturesFrame.Name = "ActiveFeaturesFrame"; activeFeaturesFrame.Size = UDim2.new(0, 200, 0, 30); activeFeaturesFrame.Position = UDim2.new(0, 10, 0, mainFrame.Size.Y.Offset + 20 + 10)
 activeFeaturesFrame.BackgroundColor3 = theme.LighterBackground; activeFeaturesFrame.BorderColor3 = theme.Border; activeFeaturesFrame.BorderSizePixel = 1; activeFeaturesFrame.Active = true; activeFeaturesFrame.Draggable = true; activeFeaturesFrame.Parent = activeFeaturesScreenGui
 activeFeaturesFrame.AutomaticSize = Enum.AutomaticSize.Y; activeFeaturesFrame.Visible = activeFeaturesGuiVisible
 local activeFeaturesTitle = Instance.new("TextLabel")
-activeFeaturesTitle.Name = "ActiveTitle"; activeFeaturesTitle.Parent = activeFeaturesFrame; activeFeaturesTitle.Size = UDim2.new(1, 0, 0, 20); activeFeaturesTitle.BackgroundColor3 = theme.ElementBackground; activeFeaturesTitle.Text = "啟用中功能"; activeFeaturesTitle.Font = Enum.Font.SourceSansSemibold; activeFeaturesTitle.TextSize = 13; activeFeaturesTitle.TextColor3 = theme.TextPrimary; activeFeaturesTitle.TextXAlignment = Enum.TextXAlignment.Center
+activeFeaturesTitle.Name = "ActiveTitle"; activeFeaturesTitle.Parent = activeFeaturesFrame; activeFeaturesTitle.Size = UDim2.new(1, 0, 0, 20); activeFeaturesTitle.BackgroundColor3 = theme.Accent; activeFeaturesTitle.Text = "啟用中功能"; activeFeaturesTitle.Font = Enum.Font.SourceSansSemibold; activeFeaturesTitle.TextSize = 13; activeFeaturesTitle.TextColor3 = theme.TextPrimary; activeFeaturesTitle.TextXAlignment = Enum.TextXAlignment.Center; activeFeaturesTitle.BackgroundTransparency = 0;
 local activeFeaturesListLayout = Instance.new("UIListLayout")
 activeFeaturesListLayout.Parent = activeFeaturesFrame; activeFeaturesListLayout.Padding = UDim.new(0, 3); activeFeaturesListLayout.SortOrder = Enum.SortOrder.LayoutOrder; activeFeaturesListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; activeFeaturesListLayout.FillDirection = Enum.FillDirection.Vertical
 local activeFeaturesPadding = Instance.new("UIPadding")
@@ -510,13 +708,69 @@ onBhopJumpRequest = function() if not featuresConfig.bhop_mode.isEnabled then re
 onBhopHumanoidStateChanged = function(o,n) if not featuresConfig.bhop_mode.isEnabled then return end; local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if not h then return end; if n==Enum.HumanoidStateType.Landed then isBhopJumping=false; canBhopAirStrafe=false elseif n==Enum.HumanoidStateType.Jumping or n==Enum.HumanoidStateType.Freefall then isBhopJumping=true; canBhopAirStrafe=true end end
 connectBhopStateChanged = function() if bhopStateChangedConnection then return end; local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if h then bhopStateChangedConnection=h.StateChanged:Connect(onBhopHumanoidStateChanged); local cs=h:GetState(); if cs==Enum.HumanoidStateType.Jumping or cs==Enum.HumanoidStateType.Freefall then isBhopJumping=true;canBhopAirStrafe=true else isBhopJumping=false;canBhopAirStrafe=false end else warn("BHOP: Hum not found")end end
 disconnectBhopStateChanged = function() if bhopStateChangedConnection then bhopStateChangedConnection:Disconnect(); bhopStateChangedConnection=nil end; isBhopJumping=false; canBhopAirStrafe=false end
-createEspForPlayer = function(p) if not DrawingLib then return end; if espElements[p]then return end; local e={}; e.Box=DrawingLib.new("Quad"); e.Box.Color=ESP_BOX_COLOR; e.Box.Thickness=1; e.Box.Filled=false; e.Box.Visible=false; e.Name=DrawingLib.new("Text"); e.Name.Text=p.Name; e.Name.Color=ESP_TEXT_COLOR; e.Name.Size=ESP_TEXT_SIZE; e.Name.Center=true; e.Name.Outline=true; e.Name.Visible=false; e.Health=DrawingLib.new("Text"); e.Health.Text="100/100"; e.Health.Color=ESP_TEXT_COLOR; e.Health.Size=ESP_HEALTH_SIZE; e.Health.Center=true; e.Health.Outline=true; e.Health.Visible=false; espElements[p]=e; end
+createEspForPlayer = function(p)
+    if not DrawingLib then return end
+    if espElements[p] then return end
+    local e = {}
+    e.Box = DrawingLib.new("Quad"); e.Box.Color = ESP_BOX_COLOR; e.Box.Thickness = 1; e.Box.Filled = false; e.Box.Visible = false
+    e.Name = DrawingLib.new("Text"); e.Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"; e.Name.Color = ESP_TEXT_COLOR; e.Name.Size = ESP_TEXT_SIZE; e.Name.Center = true; e.Name.Outline = true; e.Name.Visible = false
+    e.Health = DrawingLib.new("Text"); e.Health.Text = "100/100"; e.Health.Color = ESP_TEXT_COLOR; e.Health.Size = ESP_HEALTH_SIZE; e.Health.Center = true; e.Health.Outline = true; e.Health.Visible = false
+    espElements[p] = e
+end
 removeEspForPlayer = function(p) if espElements[p]then local e=espElements[p]; if e.Box then e.Box:Remove()end; if e.Name then e.Name:Remove()end; if e.Health then e.Health:Remove()end; espElements[p]=nil end end
-getNearestPlayerAbsolute = function() local cp, sd = nil, math.huge; local lc=LocalPlayer.Character; local lHRP=lc and lc:FindFirstChild("HumanoidRootPart"); if not lc or not lHRP then return nil end; for _,p in pairs(Players:GetPlayers())do local c=p.Character; local ht=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChild("Head"); local hum=c and c:FindFirstChildOfClass("Humanoid"); if p~=LocalPlayer and ht and h and hum and hum.Health>0 then local d=(ht.Position-lHRP.Position).Magnitude; if d<sd then sd=d; cp=p end end end; return cp end
-getNearestVisiblePlayer = function() local cp, sd = nil, math.huge; local lc=LocalPlayer.Character; local lHRP=lc and lc:FindFirstChild("HumanoidRootPart"); if not lc or not lHRP then return nil end; for _,p in pairs(Players:GetPlayers())do local c=p.Character; local ht=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChild("Head"); local hum=c and c:FindFirstChildOfClass("Humanoid"); if p~=LocalPlayer and ht and h and hum and hum.Health>0 then local d=(ht.Position-lHRP.Position).Magnitude; if d<sd then local ro=Camera.CFrame.Position; local rd=(h.Position-ro).Unit*d; local rp=RaycastParams.new(); local fl={lc,Camera,controlPanelGui,cueGui,activeFeaturesScreenGui,hitmarkerScreenGui}; if ghostModel and ghostModel.Parent then table.insert(fl,ghostModel)end; rp.FilterDescendantsInstances=fl; rp.FilterType=Enum.RaycastFilterType.Exclude; local rr=Workspace:Raycast(ro,rd,rp); if not rr or rr.Instance:IsDescendantOf(c)then sd=d; cp=p end end end end; return cp end
+
+getNearestPlayerAbsolute = function()
+    local cp, sd = nil, math.huge
+    local lc = LocalPlayer.Character
+    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
+    if not lc or not lHRP then return nil end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p == LocalPlayer or friendlyPlayersState[p] == true then continue end
+        local c = p.Character
+        local ht = c and c:FindFirstChild("HumanoidRootPart")
+        local h = c and c:FindFirstChild("Head")
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        if ht and h and hum and hum.Health > 0 then
+            local d = (ht.Position - lHRP.Position).Magnitude
+            if d < sd then sd = d; cp = p end
+        end
+    end
+    return cp
+end
+
+getNearestVisiblePlayer = function()
+    local cp, sd = nil, math.huge
+    local lc = LocalPlayer.Character
+    local lHRP = lc and lc:FindFirstChild("HumanoidRootPart")
+    if not lc or not lHRP then return nil end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p == LocalPlayer or friendlyPlayersState[p] == true then continue end
+        local c = p.Character
+        local ht = c and c:FindFirstChild("HumanoidRootPart")
+        local h_part = c and c:FindFirstChild("Head")
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        if ht and h_part and hum and hum.Health > 0 then
+            local d = (ht.Position - lHRP.Position).Magnitude
+            if d < sd then
+                local ro = Camera.CFrame.Position
+                local rd = (h_part.Position - ro).Unit * d
+                local rp = RaycastParams.new()
+                local fl = {lc, Camera, controlPanelGui, cueGui, activeFeaturesScreenGui, hitmarkerScreenGui}
+                if ghostModel and ghostModel.Parent then table.insert(fl, ghostModel) end
+                rp.FilterDescendantsInstances = fl
+                rp.FilterType = Enum.RaycastFilterType.Exclude
+                local rr = Workspace:Raycast(ro, rd, rp)
+                if not rr or rr.Instance:IsDescendantOf(c) then sd = d; cp = p end
+            end
+        end
+    end
+    return cp
+end
+
 local function teleportBehindPlayer(tp) local lc=LocalPlayer.Character; local tc=tp.Character; if not lc or not tc then return end; local hrp=lc:FindFirstChild("HumanoidRootPart"); local thrp=tc:FindFirstChild("HumanoidRootPart"); if not hrp or not thrp then return end; hrp.CFrame=thrp.CFrame*CFrame.new(0,0,featuresConfig.teleport_mode.currentTeleportDistance)*CFrame.Angles(0,math.pi,0) end
 local function teleportRandomlyAroundPlayer(tp) local lc=LocalPlayer.Character; local tc=tp.Character; if not lc or not tc then return end; local hrp=lc:FindFirstChild("HumanoidRootPart"); local thrp=tc:FindFirstChild("HumanoidRootPart"); if not hrp or not thrp then return end; local ra=math.random()*2*math.pi; local r=featuresConfig.anti_aim.currentAntiAimRadius; hrp.CFrame=thrp.CFrame*CFrame.new(math.cos(ra)*r,0,math.sin(ra)*r)end
-findNearestEnemy = function() -- Copied from hitmarker script
+
+findNearestEnemy = function()
     local nearestPlayer, nearestHumanoid, minDist = nil, nil, math.huge
     local localChar, localHRP = LocalPlayer.Character, LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not localChar or not localHRP then return nil, nil end
@@ -569,7 +823,8 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
 
         local aimbotTargetPlayer=nil; local aimbotOverrideCFrame=nil; local isLocked=false
         if featuresConfig.aimbot_module.isEnabled and isAiming then
-            aimbotTargetPlayer=getNearestVisiblePlayer(); if aimbotTargetPlayer then local th=aimbotTargetPlayer.Character and aimbotTargetPlayer.Character:FindFirstChild("Head"); if th then isLocked=true; local afp=featuresConfig.third_person.isEnabled and lastThirdPersonPos or Camera.CFrame.Position; aimbotOverrideCFrame=CFrame.new(afp,th.Position); if Camera.CameraType~=Enum.CameraType.Scriptable then Camera.CameraType=Enum.CameraType.Scriptable end end end
+            aimbotTargetPlayer=getNearestVisiblePlayer();
+            if aimbotTargetPlayer then local th=aimbotTargetPlayer.Character and aimbotTargetPlayer.Character:FindFirstChild("Head"); if th then isLocked=true; local afp=featuresConfig.third_person.isEnabled and lastThirdPersonPos or Camera.CFrame.Position; aimbotOverrideCFrame=CFrame.new(afp,th.Position); if Camera.CameraType~=Enum.CameraType.Scriptable then Camera.CameraType=Enum.CameraType.Scriptable end end end
         end
         
         if aimbotOverrideCFrame then calculatedCameraCFrame=aimbotOverrideCFrame end
@@ -587,7 +842,7 @@ rsConn = RunService.RenderStepped:Connect(function(deltaTime)
         wasTryingToShootLastFrame=isTryingToShootThisFrame
 
         -- ESP Logic
-        if featuresConfig.esp_module.isEnabled and DrawingLib then for _,p in pairs(Players:GetPlayers())do if p==LocalPlayer then continue end; local ce=p.Character; local he=ce and ce:FindFirstChildOfClass("Humanoid"); local hrpe=ce and ce:FindFirstChild("HumanoidRootPart"); local heade=ce and ce:FindFirstChild("Head"); if he and hrpe and heade and he.Health>0 then if not espElements[p]then createEspForPlayer(p)end; local els=espElements[p]; if not els then continue end; local hp,hv=Camera:WorldToViewportPoint(heade.Position+Vector3.new(0,0.5,0)); local hrpp,hrpv=Camera:WorldToViewportPoint(hrpe.Position); if hv and hrpv then local bh=math.abs(hp.Y-hrpp.Y); local bw=bh/2; local tl=Vector2.new(hp.X-bw/2,hp.Y); els.Box.PointA=tl; els.Box.PointB=Vector2.new(tl.X+bw,tl.Y); els.Box.PointC=Vector2.new(tl.X+bw,hrpp.Y); els.Box.PointD=Vector2.new(tl.X,hrpp.Y); els.Box.Visible=true; els.Name.Position=Vector2.new(hp.X,hp.Y-ESP_TEXT_SIZE-2); els.Name.Visible=true; local ht=math.floor(he.Health).."/"..math.floor(he.MaxHealth); els.Health.Text=ht; els.Health.Position=Vector2.new(hrpp.X,hrpp.Y+2); els.Health.Visible=true else els.Box.Visible=false; els.Name.Visible=false; els.Health.Visible=false end else if espElements[p]then local e=espElements[p]; e.Box.Visible=false; e.Name.Visible=false; e.Health.Visible=false end end end
+        if featuresConfig.esp_module.isEnabled and DrawingLib then for _,p in pairs(Players:GetPlayers())do if p==LocalPlayer then continue end; local ce=p.Character; local he=ce and ce:FindFirstChildOfClass("Humanoid"); local hrpe=ce and ce:FindFirstChild("HumanoidRootPart"); local heade=ce and ce:FindFirstChild("Head"); if he and hrpe and heade and he.Health>0 then if not espElements[p]then createEspForPlayer(p)end; local els=espElements[p]; if not els then continue end; els.Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"; local hp,hv=Camera:WorldToViewportPoint(heade.Position+Vector3.new(0,0.5,0)); local hrpp,hrpv=Camera:WorldToViewportPoint(hrpe.Position); if hv and hrpv then local bh=math.abs(hp.Y-hrpp.Y); local bw=bh/2; local tl=Vector2.new(hp.X-bw/2,hp.Y); els.Box.Color = ESP_BOX_COLOR; els.Name.Color = ESP_TEXT_COLOR; els.Health.Color = ESP_TEXT_COLOR; els.Box.PointA=tl; els.Box.PointB=Vector2.new(tl.X+bw,tl.Y); els.Box.PointC=Vector2.new(tl.X+bw,hrpp.Y); els.Box.PointD=Vector2.new(tl.X,hrpp.Y); els.Box.Visible=true; els.Name.Position=Vector2.new(hp.X,hp.Y-ESP_TEXT_SIZE-2); els.Name.Visible=true; local ht=math.floor(he.Health).."/"..math.floor(he.MaxHealth); els.Health.Text=ht; els.Health.Position=Vector2.new(hrpp.X,hrpp.Y+2); els.Health.Visible=true else els.Box.Visible=false; els.Name.Visible=false; els.Health.Visible=false end else if espElements[p]then local e=espElements[p]; e.Box.Visible=false; e.Name.Visible=false; e.Health.Visible=false end end end
         else if next(espElements)then for _,es in pairs(espElements)do if es.Box then es.Box.Visible=false end; if es.Name then es.Name.Visible=false end; if es.Health then es.Health.Visible=false end end end end
 
         -- Hitmarker Tracking Logic
@@ -619,7 +874,6 @@ print("DEBUG: RenderStepped connected.")
 -- ========== Hitmarker Health Check (Heartbeat) ==========
 local hitmarkerCheckConn
 hitmarkerCheckConn = RunService.Heartbeat:Connect(function(dt)
-     -- Check if feature is enabled and enough time has passed
      if featuresConfig.hitmarker.isEnabled and tick() - lastHealthCheckTime >= HITMARKER_CHECK_INTERVAL then
         local nearestEnemyPlayer, nearestEnemyHumanoid = findNearestEnemy()
 
@@ -631,8 +885,6 @@ hitmarkerCheckConn = RunService.Heartbeat:Connect(function(dt)
                 lastCheckedHealth[nearestEnemyPlayer] = currentHealth
             else
                 if currentHealth < previousHealth then
-                    print("DEBUG: Hit Detected on", nearestEnemyPlayer.Name)
-                    -- No sound call here
                     currentHitTarget = nearestEnemyPlayer
                     local currentSize = featuresConfig.hitmarker.currentHitmarkerSize
                     hitmarkerLabel.TextSize = currentSize
@@ -647,43 +899,60 @@ hitmarkerCheckConn = RunService.Heartbeat:Connect(function(dt)
                             hitmarkerLabel.Visible = true
                             hitmarkerVisibleUntil = tick() + HITMARKER_DURATION
                         else
-                            currentHitTarget = nil -- Target initially off-screen
+                            currentHitTarget = nil
                         end
                     else
-                         currentHitTarget = nil -- No valid part
+                         currentHitTarget = nil
                     end
                 end
-                lastCheckedHealth[nearestEnemyPlayer] = currentHealth -- Update health after check
+                lastCheckedHealth[nearestEnemyPlayer] = currentHealth
             end
         end
-        lastHealthCheckTime = tick() -- Update check time regardless of finding an enemy
+        lastHealthCheckTime = tick()
      end
 end)
 print("DEBUG: Hitmarker Heartbeat connected.")
 
 
 -- ========== Player Added/Removed Handlers ==========
-print("DEBUG: Connecting Player Handlers (ESP & Hitmarker)...")
+print("DEBUG: Connecting Player Handlers (ESP, Hitmarker & Friendly List)...")
 Players.PlayerAdded:Connect(function(p)
     if DrawingLib then createEspForPlayer(p) end
-    -- No need to immediately track health for hitmarker, done on first check
+    if updateFriendlyPlayersDisplay then
+        updateFriendlyPlayersDisplay()
+    end
+    -- Update ESP name for the new player if it was created before DisplayName was available
+    if espElements[p] and espElements[p].Name then
+        espElements[p].Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+    end
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-    removeEspForPlayer(p) -- For ESP
-    if lastCheckedHealth[p] then -- For Hitmarker
+    removeEspForPlayer(p)
+    if lastCheckedHealth[p] then
         lastCheckedHealth[p] = nil
-        print("DEBUG: Removed health tracking for player:", p.Name)
     end
-    if currentHitTarget == p then -- For Hitmarker tracking
+    if currentHitTarget == p then
         currentHitTarget = nil
         hitmarkerLabel.Visible = false
+    end
+    if friendlyPlayersState[p] ~= nil then
+        friendlyPlayersState[p] = nil
+    end
+    if updateFriendlyPlayersDisplay then
+        updateFriendlyPlayersDisplay()
     end
 end)
 
 -- Initialize ESP for existing players
 if DrawingLib then for _,p in pairs(Players:GetPlayers())do if p~=LocalPlayer then createEspForPlayer(p)end end end
 print("DEBUG: Initial players processed for ESP.")
+if updateFriendlyPlayersDisplay then
+    task.wait(0.1)
+    updateFriendlyPlayersDisplay()
+    print("DEBUG: Initial friendly players list processed (DisplayName/@Username + search + placeholder).")
+end
+
 
 -- ========== Character Added/Removed Handlers ==========
 print("DEBUG: Connecting Character Handlers...")
@@ -692,7 +961,6 @@ LocalPlayer.CharacterAdded:Connect(function(nc)
     if featuresConfig.fake_lag.isEnabled and LocalPlayer.Character==nc then task.wait(0.1); if createOrUpdateGhostModel then createOrUpdateGhostModel()end end
     if featuresConfig.flight_mode.isEnabled then task.wait(0.2); if setNoclipState then setNoclipState(true)end; if setFlightPhysics then setFlightPhysics(true)end end
     if featuresConfig.bhop_mode.isEnabled then task.wait(0.1); if connectBhopStateChanged then connectBhopStateChanged()end end
-    -- Reset hitmarker on respawn
     if hitmarkerLabel then hitmarkerLabel.Visible = false end
     currentHitTarget = nil
 end)
@@ -701,7 +969,6 @@ LocalPlayer.CharacterRemoving:Connect(function(oc)
     if destroyGhostModel then destroyGhostModel("Char removed")end
     if featuresConfig.flight_mode.isEnabled and setFlightPhysics then setFlightPhysics(false)end
     if disconnectBhopStateChanged then disconnectBhopStateChanged()end
-    -- No specific hitmarker action needed on removal, PlayerRemoving handles it
 end)
 print("DEBUG: Character Handlers connected.")
 
@@ -709,6 +976,13 @@ print("DEBUG: Character Handlers connected.")
 print("DEBUG: Connecting Input Handling...")
 local inputConn
 inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    local friendlySearchBox = featuresConfig.friendly_players_list and featuresConfig.friendly_players_list.ui and featuresConfig.friendly_players_list.ui.searchBox
+    if friendlySearchBox and friendlySearchBox:IsFocused() and input.KeyCode ~= CANCEL_BIND_KEY then
+        if not (currentlyBindingFeature and input.KeyCode == CANCEL_BIND_KEY) then
+            return
+        end
+    end
+
     if currentlyBindingFeature then
         if input.KeyCode == CANCEL_BIND_KEY then resetButtonStates(); return end; local conf=featuresConfig[currentlyBindingFeature]; if not conf then resetButtonStates(); return end; local nkC=nil; local iR=false
         if input.UserInputType==Enum.UserInputType.Keyboard then nkC=input.KeyCode; local k=input.KeyCode; if k==Enum.KeyCode.LeftShift or k==Enum.KeyCode.RightShift or k==Enum.KeyCode.LeftControl or k==Enum.KeyCode.RightControl or k==Enum.KeyCode.Tab or k==CANCEL_BIND_KEY then iR=true end
@@ -719,9 +993,9 @@ inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEve
 
     if featuresConfig.bhop_mode and featuresConfig.bhop_mode.isEnabled and input.KeyCode==Enum.KeyCode.Space then if not gameProcessedEvent then if onBhopJumpRequest then onBhopJumpRequest()end end end
 
-    local isAimbotHoldKey = featuresConfig.aimbot_hold and ((input.UserInputType==Enum.UserInputType.Keyboard and input.KeyCode==featuresConfig.aimbot_hold.currentKey)or(input.UserInputType~=Enum.UserInputType.Keyboard and input.UserInputType==featuresConfig.aimbot_hold.currentKey))
-    local isGuiToggleKey = featuresConfig.gui_toggle and input.KeyCode==featuresConfig.gui_toggle.currentKey
-    local isActiveListToggleKey = featuresConfig.active_features_gui_toggle and input.KeyCode==featuresConfig.active_features_gui_toggle.currentKey
+    local isAimbotHoldKey = featuresConfig.aimbot_hold and featuresConfig.aimbot_hold.currentKey and ((input.UserInputType==Enum.UserInputType.Keyboard and input.KeyCode==featuresConfig.aimbot_hold.currentKey)or(input.UserInputType~=Enum.UserInputType.Keyboard and input.UserInputType==featuresConfig.aimbot_hold.currentKey))
+    local isGuiToggleKey = featuresConfig.gui_toggle and featuresConfig.gui_toggle.currentKey and input.KeyCode==featuresConfig.gui_toggle.currentKey
+    local isActiveListToggleKey = featuresConfig.active_features_gui_toggle and featuresConfig.active_features_gui_toggle.currentKey and input.KeyCode==featuresConfig.active_features_gui_toggle.currentKey
 
     if gameProcessedEvent and not isAimbotHoldKey and not isGuiToggleKey and not isActiveListToggleKey then return end
     
@@ -730,19 +1004,18 @@ inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessedEve
 
         if fid=="gui_toggle" then cfg.isEnabled=not cfg.isEnabled; if mainFrame then mainFrame.Visible=cfg.isEnabled end; UserInputService.MouseIconEnabled=(cfg.isEnabled or(featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)); if cfg.isEnabled then UserInputService.MouseBehavior=Enum.MouseBehavior.Default else if not(featuresConfig.active_features_gui_toggle.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)then UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter end end; if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end
         elseif fid=="active_features_gui_toggle" then cfg.isEnabled=not cfg.isEnabled; activeFeaturesGuiVisible=cfg.isEnabled; if activeFeaturesFrame then activeFeaturesFrame.Visible=activeFeaturesGuiVisible and(#activeFeaturesFrame:GetChildren()>3)end; if updateActiveFeaturesDisplay then updateActiveFeaturesDisplay()end; UserInputService.MouseIconEnabled=(featuresConfig.gui_toggle.isEnabled or(cfg.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible)); if cfg.isEnabled and activeFeaturesFrame and activeFeaturesFrame.Visible then UserInputService.MouseBehavior=Enum.MouseBehavior.Default else if not featuresConfig.gui_toggle.isEnabled then UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter end end; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end
-        elseif fid=="aimbot_hold" then -- Do nothing on press, state checked in RenderStepped
+        elseif fid=="aimbot_hold" then
         else cfg.isEnabled=not cfg.isEnabled; if updateFeatureToggleButton then updateFeatureToggleButton(cfg)end; if cfg.onToggle then pcall(cfg.onToggle,cfg,cfg.isEnabled)end end
         return
     end end
 end)
-print("DEBUG: Input Handling connected.")
+print("DEBUG: Input Handling connected (with search box focus check).")
 
 -- ========== Initialization ==========
 if mainFrame then mainFrame.Visible = featuresConfig.gui_toggle.isEnabled end
 if activeFeaturesFrame then activeFeaturesFrame.Visible = activeFeaturesGuiVisible end
 updateActiveFeaturesDisplay()
 
--- Set initial hitmarker visibility based on config
 if featuresConfig.hitmarker.onToggle then
      pcall(featuresConfig.hitmarker.onToggle, featuresConfig.hitmarker, featuresConfig.hitmarker.isEnabled)
 end
@@ -752,9 +1025,9 @@ if UserInputService.MouseIconEnabled then UserInputService.MouseBehavior = Enum.
 
 -- Cleanup function
 local function cleanup()
-    print("DEBUG: Script cleanup initiated (Solara v6 + Hitmarker)...")
+    print("DEBUG: Script cleanup initiated (NiggaLOSE v7.0)...") -- MODIFIED
     if rsConn then rsConn:Disconnect(); rsConn=nil end
-    if hitmarkerCheckConn then hitmarkerCheckConn:Disconnect(); hitmarkerCheckConn=nil end -- Disconnect heartbeat
+    if hitmarkerCheckConn then hitmarkerCheckConn:Disconnect(); hitmarkerCheckConn=nil end
     if inputConn then inputConn:Disconnect(); inputConn=nil end
     if setFlightPhysics then setFlightPhysics(false)end; if setNoclipState then setNoclipState(false)end
     if disconnectBhopStateChanged then disconnectBhopStateChanged()end; if destroyGhostModel then destroyGhostModel("Script cleanup")end
@@ -762,15 +1035,13 @@ local function cleanup()
     if controlPanelGui and controlPanelGui.Parent then controlPanelGui:Destroy()end
     if activeFeaturesScreenGui and activeFeaturesScreenGui.Parent then activeFeaturesScreenGui:Destroy()end
     if cueGui and cueGui.Parent then cueGui:Destroy()end
-    if hitmarkerScreenGui and hitmarkerScreenGui.Parent then hitmarkerScreenGui:Destroy() end -- Cleanup Hitmarker GUI
+    if hitmarkerScreenGui and hitmarkerScreenGui.Parent then hitmarkerScreenGui:Destroy() end
     if featuresConfig.third_person.isEnabled and restoreCamera then pcall(restoreCamera)end
     local c=LocalPlayer.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); if h and h.AutoRotate==false then if not featuresConfig.flight_mode.isEnabled and not featuresConfig.bhop_mode.isEnabled then h.AutoRotate=true end end
-    UserInputService.MouseIconEnabled=true; UserInputService.MouseBehavior=Enum.MouseBehavior.Default; print("DEBUG: Cleanup complete (Solara v6 + Hitmarker).")
+    UserInputService.MouseIconEnabled=true; UserInputService.MouseBehavior=Enum.MouseBehavior.Default; print("DEBUG: Cleanup complete (NiggaLOSE v7.0).") -- MODIFIED
 end
 
 if script and typeof(script)=="Instance" then script.Destroying:Connect(cleanup)end
 if featuresConfig.bhop_mode.isEnabled then if connectBhopStateChanged then connectBhopStateChanged()end end
 
-print("DEBUG: Script v6 fully loaded and initialized with Hitmarker feature.")
-
-print("DEBUG: Script v6 fully loaded and initialized.")
+print("DEBUG: NiggaLOSE v7.0 fully loaded and initialized with Red/Black Theme, Hitmarker, Friendly List (DisplayName/@Username), Search (Placeholder), and ESP (DisplayName/@Username) features.") -- MODIFIED
