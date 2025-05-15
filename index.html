@@ -539,12 +539,53 @@
         <div class="container">
             <h2 class="changelog-title" data-aos="fade-up">更新日誌 📜</h2>
             <div class="timeline" data-aos="fade-up" data-aos-delay="200">
-                <!-- NEWEST Changelog Entry v6.0S -->
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="100">
+                <!-- NEWEST Changelog Entry v7.0 -->
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="50"> <!-- Adjusted delay for newest -->
+                    <div class="timeline-icon">🚀</div>
+                    <div class="timeline-content">
+                        <h3>版本 v7.0</h3>
+                        <span class="timeline-date">2025年5月15日</span>
+                        <ul>
+                            <li><strong>全新視覺主題 (紅黑風格):</strong> NiggaLOSE v7.0 面板煥然一新。</li>
+                            <li><strong>新增自動開槍的獨立開關:</strong>
+                                <ul>
+                                    <li>獨立開關，可在GUI中調整開槍延遲 (毫秒)。</li>
+                                </ul>
+                            </li>
+                            <li><strong>新增「命中標記 (Hitmarker)」功能:</strong>
+                                <ul>
+                                    <li>成功命中敵人時顯示視覺標記，可在GUI中調整標記大小。</li>
+                                </ul>
+                            </li>
+                            <li><strong>新增「友軍列表」系統:</strong>
+                                <ul>
+                                    <li>位於「設定」分頁，可勾選玩家將其設為友軍，自動從瞄準和ESP目標中排除。</li>
+                                    <li>包含搜索功能，方便查找玩家 (<span class="highlight">顯示名稱</span>或<span class="highlight">@用戶名</span>)。</li>
+                                </ul>
+                            </li>
+                            <li><strong>ESP 功能增強:</strong>
+                                <ul>
+                                    <li>玩家名稱顯示格式更新為 <span class="highlight">DisplayName (@Username)</span>。</li>
+                                </ul>
+                            </li>
+                            <li><strong>功能設定增強:</strong>
+                                <ul>
+                                    <li>「傳送至背後」新增<span class="highlight">距離</span>滑桿調整。</li>
+                                    <li>「隨機傳送」新增<span class="highlight">半徑</span>滑桿調整。</li>
+                                </ul>
+                            </li>
+                            <li>優化輸入處理邏輯，避免在搜索框輸入時觸發熱鍵。</li>
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of v7.0 Entry -->
+
+                <!-- v6.0S Entry -->
+                <div class="timeline-item" data-aos="fade-right" data-aos-delay="100">
                     <div class="timeline-icon">🎉</div>
                     <div class="timeline-content">
                         <h3>版本 v6.0S</h3>
-                        <span class="timeline-date">2025年5月15日 (假設日期)</span>
+                        <span class="timeline-date">2025年5月10日</span>
                         <ul>
                             <li><strong>全新使用者介面 (GUI v6):</strong>
                                 <ul>
@@ -574,7 +615,7 @@
                 </div>
                 <!-- End of v6.0S Entry -->
 
-                <div class="timeline-item" data-aos="fade-right" data-aos-delay="200"> <!-- Adjusted delay -->
+                <div class="timeline-item" data-aos="fade-left" data-aos-delay="200"> <!-- Adjusted delay -->
                     <div class="timeline-icon">✨</div>
                     <div class="timeline-content">
                         <h3>版本 v5.3.S</h3>
@@ -587,21 +628,6 @@
                         </ul>
                     </div>
                 </div>
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="300"> <!-- Adjusted delay -->
-                    <div class="timeline-icon">🚀</div>
-                    <div class="timeline-content">
-                        <h3>版本 v5</h3>
-                        <span class="timeline-date">2025年5月6日</span>
-                        <ul>
-                            <li>全新 redesigned 控制面板 UI。</li>
-                            <li>新增飛行速度滑塊調整。</li>
-                            <li>新增「延遲假身 (Fake Lag)」功能。</li>
-                            <li>飛行模式現在自動包含穿牆 (Noclip) 功能。</li>
-                            <li>改進第三人稱視角邏輯。</li>
-                            <li>優化了按鍵綁定衝突檢測。</li>
-                        </ul>
-                    </div>
-                </div>
                  <!-- 在此添加更多更新日誌條目 -->
             </div>
         </div>
@@ -610,50 +636,64 @@
     <!-- Features Section -->
     <section id="features">
         <div class="container">
-            <h2 data-aos="fade-up">核心功能模塊</h2>
+            <h2 data-aos="fade-up">核心功能模塊 (v7.0)</h2>
             <div class="features-grid">
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
                     <div class="card-content">
                         <span class="feature-icon">🎯</span>
-                        <h3>自動瞄準/自動開槍</h3>
-                        <p>按住指定鍵，精準鎖定最近敵人頭部，自動開槍。</p>
+                        <h3>自動瞄準 & 自動開槍</h3>
+                        <p>按住指定鍵 (預設<span class="highlight">右鍵</span>) 精準鎖定敵人。可獨立開關<span class="highlight">自動開槍</span>模組並於GUI調整開槍延遲。</p>
                     </div>
                 </div>
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
                     <div class="card-content">
                         <span class="feature-icon">👁️</span>
                         <h3>全方位透視 (ESP)</h3>
-                        <p>清晰顯示敵人方框、名稱及血量。通過菜單輕鬆切換。</p>
+                        <p>清晰顯示敵人方框、<span class="highlight">暱稱(@用戶名)</span>及血量。友軍將被自動排除。輕鬆切換。</p>
                     </div>
                 </div>
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
                      <div class="card-content">
                         <span class="feature-icon">⚡</span>
-                        <h3>當背後靈</h3>
-                        <p>按下 <span class="highlight">H</span> 鍵切換，持續傳送至敵人身後，不知道能幹嘛。</p>
+                        <h3>傳送選項</h3>
+                        <p>按 <span class="highlight">H</span> 切換<span class="highlight">傳送至背後</span> (距離可調)。按 <span class="highlight">N</span> 切換<span class="highlight">隨機傳送 (反瞄準)</span> (半徑可調)。</p>
                     </div>
                 </div>
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
                      <div class="card-content">
-                        <span class="feature-icon">✨</span>
-                        <h3>亂飄(反瞄準)</h3>
-                        <p>按下 <span class="highlight">N</span> 鍵切換，在敵人周圍進行不可預測的隨機移動。</p>
+                        <span class="feature-icon">✈️</span>
+                        <h3>飛行 & 穿牆</h3>
+                        <p>按下 <span class="highlight">V</span> 鍵切換，掙脫地面束縛，自由飛行並穿透障礙物。飛行速度可於GUI調整。</p>
                     </div>
                 </div>
                 <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
                      <div class="card-content">
-                        <span class="feature-icon">✈️</span>
-                        <h3>自由飛行</h3>
-                        <p>掙脫地面束縛。</p>
+                        <span class="feature-icon">🐇</span>
+                        <h3>連跳 (Bhop)</h3>
+                        <p>按下 <span class="highlight">左Alt</span> 鍵切換，實現兔子跳以獲得高速移動。空中加速力度可於GUI調整。</p>
                     </div>
                 </div>
                  <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
                      <div class="card-content">
-                        <span class="feature-icon">⚙️</span>
-                        <h3>便捷控制面板</h3>
-                        <p>按下 <span class="highlight">Insert</span> 鍵呼出，隨心調整各項功能與快捷鍵。</p>
+                        <span class="feature-icon">💥</span>
+                        <h3>命中標記 (Hitmarker)</h3>
+                        <p>成功對敵人造成傷害時，螢幕中心將顯示視覺標記。標記大小可於GUI調整。</p>
                     </div>
                 </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+                    <div class="card-content">
+                       <span class="feature-icon">👻</span>
+                       <h3>延遲假身</h3>
+                       <p>按下 <span class="highlight">X</span> 鍵切換，不知道為什麼可以在剛開始定住玩家時先跑。</p>
+                   </div>
+               </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+                    <div class="card-content">
+                       <span class="feature-icon">⚙️</span>
+                       <h3>便捷控制面板</h3>
+                       <p>按 <span class="highlight">Insert</span> 鍵呼出主面板，<span class="highlight">Delete</span> 鍵切換啟用列表。隨心調整功能與快捷鍵。</p>
+                   </div>
+               </div>
             </div>
         </div>
     </section>
