@@ -524,7 +524,53 @@
         <div id="tsparticles"></div> <!-- tsParticles container -->
         <div class="container">
             <h1 class="title">NigaaLOSE</h1>
-            <p class="tagline" id="hero-tagline">就只是中文的競爭者腳本</p>
+            <p class="tagline" id="hero-tagline">nigga的宗       }
+        footer a:hover {
+            color: var(--primary-hover-color);
+        }
+
+        /* 輔助類 */
+        .highlight {
+            background-color: rgba(var(--accent-color-rgb), 0.25);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: var(--accent-color);
+            box-shadow: 0 0 8px rgba(var(--accent-color-rgb), 0.3);
+        }
+
+        /* 響應式調整 */
+        @media (max-width: 768px) {
+            #hero .title { font-size: clamp(2.8em, 10vw, 3.5em); }
+            #hero .tagline { font-size: clamp(1.1em, 5vw, 1.3em); }
+            .loadstring-area pre code { font-size: 0.9em; }
+            .copy-button { padding: 14px 30px; font-size: 1.05em; }
+        }
+         @media (max-width: 480px) {
+            #hero .title { font-size: clamp(2.2em, 12vw, 2.8em); }
+            #hero .tagline { font-size: 1em; }
+            .features-grid { grid-template-columns: 1fr; }
+            .feature-card h3 { font-size: 1.3em; }
+            .feature-icon { font-size: 3em; }
+            #warning ul li { font-size: 1em; padding-left: 30px; }
+            #warning ul li::before { font-size: 1.1em; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Preloader -->
+    <div id="preloader">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Hero Section -->
+    <section id="hero">
+        <div id="tsparticles"></div> <!-- tsParticles container -->
+        <div class="container">
+            <h1 class="title">NigaaLOSE</h1>
+            <p class="tagline" id="hero-tagline">Aimmy是由h0pZ開發的rivals輔助器 旨在讓雙手殘疾和弱智低能兒使用者更容易玩遊戲。</p>
 
             <div class="loadstring-area">
                 <pre><code id="loadstring-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE"))()</code></pre>
