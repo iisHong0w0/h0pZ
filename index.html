@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -485,6 +485,33 @@
             color: var(--primary-hover-color);
         }
 
+        /* Download Button Styles */
+        .download-btn {
+            display: inline-block;
+            background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            font-weight: 900;
+            padding: 28px 70px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            box-shadow: 0 8px 32px rgba(var(--primary-color-rgb), 0.25);
+            text-decoration: none;
+            letter-spacing: 2px;
+            transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            z-index: 10;
+        }
+        .download-btn:hover {
+            background: linear-gradient(90deg, var(--primary-hover-color), var(--accent-color));
+            transform: translateY(-4px) scale(1.04);
+            box-shadow: 0 16px 40px rgba(var(--primary-color-rgb), 0.35);
+        }
+
         /* 輔助類 */
         .highlight {
             background-color: rgba(var(--accent-color-rgb), 0.25);
@@ -515,8 +542,6 @@
     </style>
 </head>
 <body>
-</head>
-<body>
 
     <!-- Preloader -->
     <div id="preloader">
@@ -530,191 +555,18 @@
             <h1 class="title">NigaaLOSE</h1>
             <!-- 注意：我將兩個 tagline 合併，並選擇了較新的那個 -->
             <p class="tagline" id="hero-tagline">
-                <span>nigga是由h0pZ開發的rivals輔助器</span>
+                <span>niggaLOSE是由h0pZ開發的rivals輔助器</span>
                 <span>旨在讓雙手殘疾和弱智低能兒使用者更容易玩遊戲。</span>
             </p>
+            <div style="text-align:center; margin-bottom: 30px;">
+                <a href="https://github.com/iisHong0w0/niggaLOSE-AI/blob/main/niggaLOSE%20AI.zip?raw=true" class="download-btn" download>
+                    下載 niggaLOSE-AI
+                </a>
+            </div>
             <div class="loadstring-area">
-                <pre><code id="loadstring-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE"))()</code></pre>
+                <pre><code id="loadstring-code">loadstring(game:HttpGet('https://raw.githubusercontent.com/iisHong0w0/niggalose/refs/heads/main/NiggaLOSE'))()</code></pre>
                 <button class="copy-button" onclick="copyLoadstring()">一鍵複製腳本</button>
                 <span id="copy-feedback" class="copy-feedback-message">已複製到剪貼板!</span>
-            </div>
-        </div>
-    </section>
-
-    <!-- Changelog Section (Moved Here) -->
-    <section id="changelog">
-        <div class="container">
-
-    </style>
-</head>
-<body>
-
-    <!-- Preloader -->
-    <div id="preloader">
-        <div class="spinner"></div>
-    </div>
-
-
-    <!-- Changelog Section (Moved Here) -->
-    <section id="changelog">
-        <div class="container">
-            <h2 class="changelog-title" data-aos="fade-up">更新日誌 📜</h2>
-            <div class="timeline" data-aos="fade-up" data-aos-delay="200">
-                <!-- NEWEST Changelog Entry v7.0 -->
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="50"> <!-- Adjusted delay for newest -->
-                    <div class="timeline-icon">🚀</div>
-                    <div class="timeline-content">
-                        <h3>版本 v7.0</h3>
-                        <span class="timeline-date">2025年5月15日</span>
-                        <ul>
-                            <li><strong>全新視覺主題 (紅黑風格):</strong> NiggaLOSE v7.0 面板煥然一新。</li>
-                            <li><strong>新增自動開槍的獨立開關:</strong>
-                                <ul>
-                                    <li>獨立開關，可在GUI中調整開槍延遲 (毫秒)。</li>
-                                </ul>
-                            </li>
-                            <li><strong>新增「命中標記 (Hitmarker)」功能:</strong>
-                                <ul>
-                                    <li>成功命中敵人時顯示視覺標記，可在GUI中調整標記大小。</li>
-                                </ul>
-                            </li>
-                            <li><strong>新增「友軍列表」系統:</strong>
-                                <ul>
-                                    <li>位於「設定」分頁，可勾選玩家將其設為友軍，自動從瞄準和ESP目標中排除。</li>
-                                    <li>包含搜索功能，方便查找玩家 (<span class="highlight">顯示名稱</span>或<span class="highlight">@用戶名</span>)。</li>
-                                </ul>
-                            </li>
-                            <li><strong>ESP 功能增強:</strong>
-                                <ul>
-                                    <li>玩家名稱顯示格式更新為 <span class="highlight">DisplayName (@Username)</span>。</li>
-                                </ul>
-                            </li>
-                            <li><strong>功能設定增強:</strong>
-                                <ul>
-                                    <li>「傳送至背後」新增<span class="highlight">距離</span>滑桿調整。</li>
-                                    <li>「隨機傳送」新增<span class="highlight">半徑</span>滑桿調整。</li>
-                                </ul>
-                            </li>
-                            <li>優化輸入處理邏輯，避免在搜索框輸入時觸發熱鍵。</li>
-                        </ul>
-                    </div>
-                </div>
-                <!-- End of v7.0 Entry -->
-
-                <!-- v6.0S Entry -->
-                <div class="timeline-item" data-aos="fade-right" data-aos-delay="100">
-                    <div class="timeline-icon">🎉</div>
-                    <div class="timeline-content">
-                        <h3>版本 v6.0S</h3>
-                        <span class="timeline-date">2025年5月10日</span>
-                        <ul>
-                            <li><strong>全新使用者介面 (GUI v6):</strong>
-                                <ul>
-                                    <li>新設計，分頁系統 (瞄準, 透視, 移動, 雜項, 設定)。</li>
-                                    <li>新視覺主題，標題欄美化 (Logo, 網站文字)。</li>
-                                </ul>
-                            </li>
-                            <li><strong>新增「啟用中功能列表」GUI:</strong>
-                                <ul>
-                                    <li>獨立可拖曳面板顯示已啟用功能 (預設熱鍵 <span class="highlight">Delete</span>)。</li>
-                                </ul>
-                            </li>
-                            <li><strong>新增「連跳 (Bhop)」模式:</strong>
-                                <ul>
-                                    <li>獨立模組 (預設熱鍵 <span class="highlight">LeftAlt</span>)，GUI可調空中加速力度。</li>
-                                </ul>
-                            </li>
-                            <li><strong>功能設定增強:</strong>
-                                <ul>
-                                    <li>飛行速度、第三人稱視角距離可透過GUI滑桿調整。</li>
-                                </ul>
-                            </li>
-                            <li>飛行/Bhop模式自動管理 <span class="highlight">Humanoid.AutoRotate</span>。</li>
-                            <li>優化移動功能排斥邏輯、輸入處理、滑鼠行為管理。</li>
-                        </ul>
-                    </div>
-                </div>
-                <!-- End of v6.0S Entry -->
-
-                <div class="timeline-item" data-aos="fade-left" data-aos-delay="200"> <!-- Adjusted delay -->
-                    <div class="timeline-icon">✨</div>
-                    <div class="timeline-content">
-                        <h3>版本 v5.3.S</h3>
-                        <span class="timeline-date">2025年5月9日</span>
-                        <ul>
-                            <li>針對 Solara 注入器進行了優化，解決了注入失敗的問題。</li>
-                            <li>簡化了部分核心邏輯函數，以提高與特定注入器的兼容性。</li>
-                            <li>保留了 DrawingLib 檢查，確保 ESP 功能的穩定性。</li>
-                            <li>調整了 FakeLag 歷史記錄上限。</li>
-                        </ul>
-                    </div>
-                </div>
-                 <!-- 在此添加更多更新日誌條目 -->
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features">
-        <div class="container">
-            <h2 data-aos="fade-up">核心功能模塊 (v7.0)</h2>
-            <div class="features-grid">
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
-                    <div class="card-content">
-                        <span class="feature-icon">🎯</span>
-                        <h3>自動瞄準 & 自動開槍</h3>
-                        <p>按住指定鍵 (預設<span class="highlight">右鍵</span>) 精準鎖定敵人。可獨立開關<span class="highlight">自動開槍</span>模組並於GUI調整開槍延遲。</p>
-                    </div>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
-                    <div class="card-content">
-                        <span class="feature-icon">👁️</span>
-                        <h3>全方位透視 (ESP)</h3>
-                        <p>清晰顯示敵人方框、<span class="highlight">暱稱(@用戶名)</span>及血量。友軍將被自動排除。輕鬆切換。</p>
-                    </div>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
-                     <div class="card-content">
-                        <span class="feature-icon">⚡</span>
-                        <h3>傳送選項</h3>
-                        <p>按 <span class="highlight">H</span> 切換<span class="highlight">傳送至背後</span> (距離可調)。按 <span class="highlight">N</span> 切換<span class="highlight">隨機傳送 (反瞄準)</span> (半徑可調)。</p>
-                    </div>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
-                     <div class="card-content">
-                        <span class="feature-icon">✈️</span>
-                        <h3>飛行 & 穿牆</h3>
-                        <p>按下 <span class="highlight">V</span> 鍵切換，掙脫地面束縛，自由飛行並穿透障礙物。飛行速度可於GUI調整。</p>
-                    </div>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
-                     <div class="card-content">
-                        <span class="feature-icon">🐇</span>
-                        <h3>連跳 (Bhop)</h3>
-                        <p>按下 <span class="highlight">左Alt</span> 鍵切換，實現兔子跳以獲得高速移動。空中加速力度可於GUI調整。</p>
-                    </div>
-                </div>
-                 <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
-                     <div class="card-content">
-                        <span class="feature-icon">💥</span>
-                        <h3>命中標記 (Hitmarker)</h3>
-                        <p>成功對敵人造成傷害時，螢幕中心將顯示視覺標記。標記大小可於GUI調整。</p>
-                    </div>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
-                    <div class="card-content">
-                       <span class="feature-icon">👻</span>
-                       <h3>延遲假身</h3>
-                       <p>按下 <span class="highlight">X</span> 鍵切換，不知道為什麼可以在剛開始定住玩家時先跑。</p>
-                   </div>
-               </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
-                    <div class="card-content">
-                       <span class="feature-icon">⚙️</span>
-                       <h3>便捷控制面板</h3>
-                       <p>按 <span class="highlight">Insert</span> 鍵呼出主面板，<span class="highlight">Delete</span> 鍵切換啟用列表。隨心調整功能與快捷鍵。</p>
-                   </div>
-               </div>
             </div>
         </div>
     </section>
