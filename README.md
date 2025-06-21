@@ -1,3 +1,2 @@
 ㄏㄏ
-
-https://github.com/iisHong0w0/niggaLOSE-AI
+https://iishong0w0.github.io/h0pZ/
